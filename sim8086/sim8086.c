@@ -1,7 +1,7 @@
 #include "sim8086.h"
 
-void disassemble(u8 buffer[], u32 idx);
-Instruction get_next_instruction(u8 buffer[], u32 n);
+void disassemble(u8 buffer[], u32 n);
+Instruction get_next_instruction(u8 buffer[], u32 idx);
 void print_instruction(Instruction* inst, FILE* dest);
 void decode_rm_reg(Instruction* inst, u8 buffer[]);
 Operand get_reg_operand(u8 register_idx, u8 wide);
@@ -130,12 +130,12 @@ char* get_reg_name(u32 reg_idx, u32 part_idx) {
 }
 
 void print_operand(Operand operand, FILE* dest) {
-    switch (operand.kind) {
+    OperandType type = operand.kind;
+    switch (type)
         case OperandRegister: {
             RegisterAccess reg = operand.reg;
             fprintf(dest, "%s", get_reg_name(reg.index, (reg.count == 2) ? 2 : reg.offset));
             break;
-        }
         default:
             fprintf(stderr, "ERROR: unknown operand encountered.\n");
             exit(1);
