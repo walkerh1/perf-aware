@@ -21,6 +21,10 @@ typedef int64_t i64;
 #define BUFFER_SIZE (1024*1024)
 
 typedef enum {
+    FlagWide = (1 << 0),
+} FlagTypes;
+
+typedef enum {
     OpNone,
     OpMov,
     OpCount,
@@ -89,6 +93,7 @@ typedef struct {
     u32 size;               // size of instruction in bytes
     OpType op;              // opcode type
     Operand operands[2];    // instruction operands
+    u32 flags;              // flags
 } Instruction;
 
 #endif

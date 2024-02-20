@@ -27,10 +27,10 @@ char* get_reg_name(u32 reg_idx, u32 part_idx) {
 char* get_effective_address_base_name(EffectiveAddress address) {
     char *rm_base[] = {
             "",
-            "bx + si",
-            "bx + di",
-            "bp + si",
-            "bp + di",
+            "bx+si",
+            "bx+di",
+            "bp+si",
+            "bp+di",
             "si",
             "di",
             "bp",
@@ -39,7 +39,8 @@ char* get_effective_address_base_name(EffectiveAddress address) {
     return rm_base[address.base];
 }
 
-void print_operand(Operand operand, FILE* dest) {
+void print_operand(Instruction* inst, u8 operand_num, FILE* dest) {
+    Operand operand = inst->operands[operand_num];
     OperandType type = operand.kind;
     switch (type) {
         case OperandRegister: {
@@ -50,13 +51,19 @@ void print_operand(Operand operand, FILE* dest) {
         case OperandMemory: {
             EffectiveAddress address = operand.address;
             fprintf(dest, "[%s", get_effective_address_base_name(address));
-            if (address.displacement != 0) {
-                fprintf(dest, " + %d", address.displacement);
+            if (address.base == Ea_direct) {
+                fprintf(dest, "%d", address.displacement);
+            } else if (address.displacement != 0) {
+                fprintf(dest, "%+d", address.displacement);
             }
             fprintf(dest, "]");
             break;
         }
         case OperandImmediate: {
+            u32 wide = inst->flags & FlagWide;
+            if (inst->operands[0].kind == OperandMemory) {
+                fprintf(dest, "%s ", wide ? "word" : "byte");
+            }
             fprintf(dest, "%d", operand.immediate);
             break;
         }
@@ -68,8 +75,8 @@ void print_operand(Operand operand, FILE* dest) {
 
 void print_instruction(Instruction* inst, FILE *dest) {
     fprintf(dest, "%s ", get_mnemonic(inst->op));
-    print_operand(inst->operands[0], dest);
+    print_operand(inst, 0, dest);
     fprintf(dest, ", ");
-    print_operand(inst->operands[1], dest);
+    print_operand(inst, 1, dest);
     fprintf(dest, "\n");
 }
