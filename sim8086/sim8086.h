@@ -30,6 +30,26 @@ typedef enum {
     OpAdd,
     OpSub,
     OpCmp,
+    OpJe,
+    OpJl,
+    OpJle,
+    OpJb,
+    OpJbe,
+    OpJp,
+    OpJo,
+    OpJs,
+    OpJne,
+    OpJnl,
+    OpJnle,
+    OpJnb,
+    OpJnbe,
+    OpJnp,
+    OpJno,
+    OpJns,
+    OpLoop,
+    OpLoopz,
+    OpLoopnz,
+    OpJcxz,
     OpCount,
 } OpType;
 
@@ -77,9 +97,11 @@ typedef struct {
 } RegisterAccess;
 
 typedef enum {
+    OperandNone,
     OperandRegister,
     OperandMemory,
     OperandImmediate,
+    OperandRelativeImmediate,
 } OperandType;
 
 typedef struct {
@@ -88,6 +110,7 @@ typedef struct {
         RegisterAccess reg;
         EffectiveAddress address;
         u32 immediate;
+        i32 s_immediate;
     };
 } Operand;
 

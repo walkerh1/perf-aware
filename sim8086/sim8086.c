@@ -11,6 +11,7 @@ void decode_im_to_reg(Instruction* inst, const u8 buffer[]);
 void decode_im_to_rm(Instruction* inst, const u8 buffer[]);
 void decode_acc_mem(Instruction* inst, const u8 buffer[]);
 void decode_im_to_acc(Instruction* inst, const u8 buffer[]);
+void decode_jmp(Instruction* inst, const u8 buffer[]);
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
@@ -57,6 +58,75 @@ Instruction get_next_instruction(u8 buffer[], u32 idx) {
     inst.flags = 0;
 
     u8 opcode = buffer[inst.address];
+
+    // check for jump opcodes
+    switch (opcode) {
+        case 0b01110100:
+            inst.op = OpJe;
+            break;
+        case 0b01111100:
+            inst.op = OpJl;
+            break;
+        case 0b01111110:
+            inst.op = OpJle;
+            break;
+        case 0b01110010:
+            inst.op = OpJb;
+            break;
+        case 0b01110110:
+            inst.op = OpJbe;
+            break;
+        case 0b01111010:
+            inst.op = OpJp;
+            break;
+        case 0b01110000:
+            inst.op = OpJo;
+            break;
+        case 0b01111000:
+            inst.op = OpJs;
+            break;
+        case 0b01110101:
+            inst.op = OpJne;
+            break;
+        case 0b01111101:
+            inst.op = OpJnl;
+            break;
+        case 0b01111111:
+            inst.op = OpJnle;
+            break;
+        case 0b01110011:
+            inst.op = OpJnb;
+            break;
+        case 0b01110111:
+            inst.op = OpJnbe;
+            break;
+        case 0b01111011:
+            inst.op = OpJnp;
+            break;
+        case 0b01110001:
+            inst.op = OpJno;
+            break;
+        case 0b01111001:
+            inst.op = OpJns;
+            break;
+        case 0b11100010:
+            inst.op = OpLoop;
+            break;
+        case 0b11100001:
+            inst.op = OpLoopz;
+            break;
+        case 0b11100000:
+            inst.op = OpLoopnz;
+            break;
+        case 0b11100011:
+            inst.op = OpJcxz;
+            break;
+    }
+
+    if (inst.op != OpNone) { // must have matched a jmp code
+        decode_jmp(&inst, buffer);
+        return inst;
+    }
 
     // opcodes of len 7
     opcode >>= 1;
@@ -123,6 +193,17 @@ Instruction get_next_instruction(u8 buffer[], u32 idx) {
     }
 
     return inst;
+}
+
+void decode_jmp(Instruction* inst, const u8 buffer[]) {
+    Operand signed_immediate;
+    signed_immediate.kind = OperandRelativeImmediate;
+    signed_immediate.s_immediate = (i32)(i8)buffer[inst->address + 1];
+    inst->operands[0] = signed_immediate;
+    Operand none;
+    none.kind = OperandNone;
+    inst->operands[1] = none;
+    inst->size = 2;
 }
 
 void decode_im_to_acc(Instruction* inst, const u8 buffer[]) {

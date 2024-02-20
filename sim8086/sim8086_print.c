@@ -8,6 +8,26 @@ char* get_mnemonic(u32 idx) {
             "add",
             "sub",
             "cmp",
+            "je",
+            "jl",
+            "jle",
+            "jb",
+            "jbe",
+            "jp",
+            "jo",
+            "js",
+            "jne",
+            "jnl",
+            "jnle",
+            "jnb",
+            "jnbe",
+            "jnp",
+            "jno",
+            "jns",
+            "loop",
+            "loopz",
+            "loopnz",
+            "jcxz",
     };
     return mnemonics[idx];
 }
@@ -52,7 +72,11 @@ void print_operand(Instruction* inst, u8 operand_num, FILE* dest) {
             break;
         }
         case OperandMemory: {
+            u32 wide = inst->flags & FlagWide;
             EffectiveAddress address = operand.address;
+            if (inst->operands[0].kind != OperandRegister) {
+                fprintf(dest, "%s ", wide ? "word" : "byte");
+            }
             fprintf(dest, "[%s", get_effective_address_base_name(address));
             if (address.base == Ea_direct) {
                 fprintf(dest, "%d", address.displacement);
@@ -63,11 +87,11 @@ void print_operand(Instruction* inst, u8 operand_num, FILE* dest) {
             break;
         }
         case OperandImmediate: {
-            u32 wide = inst->flags & FlagWide;
-            if (inst->operands[0].kind == OperandMemory) {
-                fprintf(dest, "%s ", wide ? "word" : "byte");
-            }
             fprintf(dest, "%d", operand.immediate);
+            break;
+        }
+        case OperandRelativeImmediate: {
+            fprintf(dest, "%+d", operand.s_immediate);
             break;
         }
         default:
@@ -79,7 +103,9 @@ void print_operand(Instruction* inst, u8 operand_num, FILE* dest) {
 void print_instruction(Instruction* inst, FILE *dest) {
     fprintf(dest, "%s ", get_mnemonic(inst->op));
     print_operand(inst, 0, dest);
-    fprintf(dest, ", ");
-    print_operand(inst, 1, dest);
+    if (inst->operands[1].kind != OperandNone) {
+        fprintf(dest, ", ");
+        print_operand(inst, 1, dest);
+    }
     fprintf(dest, "\n");
 }
