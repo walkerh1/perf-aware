@@ -1,21 +1,20 @@
 #include "sim8086.h"
+#include "sim8086_print.h"
 
 void disassemble(u8 buffer[], u32 n);
 Instruction get_next_instruction(u8 buffer[], u32 idx);
-void print_instruction(Instruction* inst, FILE* dest);
 void decode_rm_reg(Instruction* inst, const u8 buffer[]);
 Operand get_reg_operand(u8 register_idx, u8 wide);
-void print_operand(Operand operand, FILE* dest);
 Operand get_effective_address(u8 rm_idx, u8 mod);
+void decode_im_to_reg(Instruction* inst, const u8 buffer[]);
 
 int main(int argc, char *argv[]) {
-    // make sure at least one machine code file was provided
     if (argc < 2) {
         fprintf(stderr, "USAGE: %s [8086 machine code file] ...\n", argv[0]);
         exit(1);
     }
 
-    u8 buffer[BUFFER_SIZE]; // buffer for holding raw bytes of 8086 machine code
+    u8 buffer[BUFFER_SIZE];
 
     for (int i = 1; i < argc; i++) {
         FILE *fp;
@@ -50,6 +49,7 @@ void disassemble(u8 buffer[], u32 n) {
 Instruction get_next_instruction(u8 buffer[], u32 idx) {
     Instruction inst;
     inst.address = idx;
+    inst.op = OpNone;
 
     u8 opcode = buffer[inst.address];
     opcode >>= 2;
@@ -58,23 +58,39 @@ Instruction get_next_instruction(u8 buffer[], u32 idx) {
             inst.op = OpMov;
             decode_rm_reg(&inst, buffer);
             break;
-        default:
-            fprintf(stderr, "ERROR: unknown opcode encountered.\n");
-            exit(1);
+    }
+
+    opcode >>= 2;
+    switch (opcode) {
+        case 0b1011:
+            inst.op = OpMov;
+            decode_im_to_reg(&inst, buffer);
+            break;
+    }
+
+    if (inst.op == OpNone) {
+        fprintf(stderr, "ERROR: unknown opcode encountered.\n");
+        exit(1);
     }
 
     return inst;
 }
 
+void decode_im_to_reg(Instruction* inst, const u8 buffer[]) {
+    u32 idx = inst->address;
+    u8 w = (buffer[idx] >> 3) & 1;
+    u8 reg = buffer[idx] & 0b111;
+
+}
+
 void decode_rm_reg(Instruction* inst, const u8 buffer[]) {
     u32 idx = inst->address;
-    u8 d, w, mod, reg, rm;
-    d = (buffer[idx] >> 1) & 1;
-    w = buffer[idx] & 1;
+    u8 d = (buffer[idx] >> 1) & 1;
+    u8 w = buffer[idx] & 1;
     idx++;
-    mod = buffer[idx] >> 6;
-    reg = (buffer[idx] >> 3) & 0b111;
-    rm = buffer[idx] & 0b111;
+    u8 mod = buffer[idx] >> 6;
+    u8 reg = (buffer[idx] >> 3) & 0b111;
+    u8 rm = buffer[idx] & 0b111;
     if (mod == 0b11) {
         inst->operands[d] = get_reg_operand(rm, w);
     } else {
@@ -118,73 +134,4 @@ Operand get_reg_operand(u8 reg, u8 wide) {
     res.kind = OperandRegister;
     res.reg = reg_table[reg][wide];
     return res;
-}
-
-char* get_mnemonic(u32 idx) {
-    char *mnemonics[] = {
-            "",
-            "mov",
-    };
-    return mnemonics[idx];
-}
-
-char* get_reg_name(u32 reg_idx, u32 part_idx) {
-    char *reg_names[][3] = {
-            {"",   "",   ""},
-            {"al", "ah", "ax"},
-            {"bl", "bh", "bx"},
-            {"cl", "ch", "cx"},
-            {"dl", "dh", "dx"},
-            {"sp", "sp", "sp"},
-            {"bp", "bp", "bp"},
-            {"si", "si", "si"},
-            {"di", "di", "di"},
-    };
-    return reg_names[reg_idx][part_idx];
-}
-
-char* get_effective_address_base_name(EffectiveAddress address) {
-    char *rm_base[] = {
-        "",
-        "bx + si",
-        "bx + di",
-        "bp + si",
-        "bp + di",
-        "si",
-        "di",
-        "bp",
-        "bx",
-    };
-    return rm_base[address.base];
-}
-
-void print_instruction(Instruction* inst, FILE *dest) {
-    fprintf(dest, "%s ", get_mnemonic(inst->op));
-    print_operand(inst->operands[0], dest);
-    fprintf(dest, ", ");
-    print_operand(inst->operands[1], dest);
-    fprintf(dest, "\n");
-}
-
-void print_operand(Operand operand, FILE* dest) {
-    OperandType type = operand.kind;
-    switch (type) {
-        case OperandRegister: {
-            RegisterAccess reg = operand.reg;
-            fprintf(dest, "%s", get_reg_name(reg.index, (reg.count == 2) ? 2 : reg.offset));
-            break;
-        }
-        case OperandMemory: {
-            EffectiveAddress address = operand.address;
-            fprintf(dest, "[%s", get_effective_address_base_name(address));
-            if (address.displacement != 0) {
-                fprintf(dest, " + %d", address.displacement);
-            }
-            fprintf(dest, "]");
-            break;
-        }
-        default:
-            fprintf(stderr, "ERROR: unknown operand encountered.\n");
-            exit(1);
-    };
 }

@@ -1,3 +1,6 @@
+#ifndef PERF_AWARE_SIM8086_H
+#define PERF_AWARE_SIM8086_H
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -15,19 +18,16 @@ typedef int64_t i64;
 
 #define len(arr) (sizeof(arr) / sizeof(arr[0]))
 
-#define BUFFER_SIZE 1024*1024
+#define BUFFER_SIZE (1024*1024)
 
 typedef enum {
     OpNone,
-
     OpMov,
-
     OpCount,
 } OpType;
 
 typedef enum {
     Reg_none,
-
     Reg_a,
     Reg_b,
     Reg_c,
@@ -41,13 +41,11 @@ typedef enum {
     Reg_ss,
     Reg_ds,
     Reg_ip,
-
     Reg_count,
 } Register;
 
 typedef enum {
     Ea_direct,
-
     Ea_bx_si,
     Ea_bx_di,
     Ea_bp_si,
@@ -56,7 +54,6 @@ typedef enum {
     Ea_di,
     Ea_bp,
     Ea_bx,
-
     Ea_count,
 } EffectiveAddressBase;
 
@@ -92,3 +89,5 @@ typedef struct {
     OpType op;              // opcode type
     Operand operands[2];    // instruction operands
 } Instruction;
+
+#endif
