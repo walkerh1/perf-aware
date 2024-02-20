@@ -80,6 +80,7 @@ typedef struct {
     union {
         RegisterAccess reg;
         EffectiveAddress address;
+        u32 immediate;
     };
 } Operand;
 

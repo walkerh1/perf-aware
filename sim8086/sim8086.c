@@ -80,7 +80,18 @@ void decode_im_to_reg(Instruction* inst, const u8 buffer[]) {
     u32 idx = inst->address;
     u8 w = (buffer[idx] >> 3) & 1;
     u8 reg = buffer[idx] & 0b111;
-
+    inst->operands[0] = get_reg_operand(reg, w);
+    Operand imm_operand;
+    imm_operand.kind = OperandImmediate;
+    if (w) {
+        idx += 2;
+        imm_operand.immediate = (u32)((buffer[idx] << 8) | buffer[idx-1]);
+    } else {
+        idx += 1;
+        imm_operand.immediate = (u32)(buffer[idx]);
+    }
+    inst->operands[1] = imm_operand;
+    inst->size = idx - inst->address + 1;
 }
 
 void decode_rm_reg(Instruction* inst, const u8 buffer[]) {
@@ -95,7 +106,8 @@ void decode_rm_reg(Instruction* inst, const u8 buffer[]) {
         inst->operands[d] = get_reg_operand(rm, w);
     } else {
         Operand operand = get_effective_address(rm, mod);
-        if (mod == 0b10 || (mod == 0b00 && rm == 0b011)) {
+        operand.address.displacement = 0;
+        if (mod == 0b10 || (mod == 0b00 && rm == 0b110)) {
             idx += 2;
             operand.address.displacement = (buffer[idx] << 8) | buffer[idx-1];
         } else if (mod == 0b01) {

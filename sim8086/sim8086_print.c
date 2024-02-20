@@ -56,6 +56,10 @@ void print_operand(Operand operand, FILE* dest) {
             fprintf(dest, "]");
             break;
         }
+        case OperandImmediate: {
+            fprintf(dest, "%d", operand.immediate);
+            break;
+        }
         default:
             fprintf(stderr, "ERROR: unknown operand encountered.\n");
             exit(1);
