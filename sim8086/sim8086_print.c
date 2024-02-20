@@ -5,6 +5,9 @@ char* get_mnemonic(u32 idx) {
     char *mnemonics[] = {
             "",
             "mov",
+            "add",
+            "sub",
+            "cmp",
     };
     return mnemonics[idx];
 }

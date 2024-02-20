@@ -27,6 +27,9 @@ typedef enum {
 typedef enum {
     OpNone,
     OpMov,
+    OpAdd,
+    OpSub,
+    OpCmp,
     OpCount,
 } OpType;
 
