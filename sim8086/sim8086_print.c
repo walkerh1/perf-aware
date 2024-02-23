@@ -109,8 +109,9 @@ void print_instruction(Instruction* inst, FILE *dest) {
     }
 }
 
-void print_registers(u16 reg_state[]) {
+void print_registers(u16 reg_state[], u32 ip) {
     for (int i = 1; i < Reg_count; i++) {
         printf("%8s: 0x%04x (%u)\n", get_reg_name(i, 2), reg_state[i], reg_state[i]);
     }
+    printf("%8s: 0x%04x (%u)\n", "ip", ip, ip);
 }

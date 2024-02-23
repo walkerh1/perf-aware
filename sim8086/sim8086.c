@@ -3,10 +3,10 @@
 #include "sim8086.h"
 #include "sim8086_print.h"
 
+Instruction decode(u8 buffer[]);
 void disassemble(u8 buffer[], u32 n);
 void run(u8 buffer[], u32 n);
-Instruction decode(u8 buffer[], u32 idx);
-void execute_instruction(Instruction* inst, u16 reg_state[]);
+void execute_instruction(Instruction* inst);
 void decode_rm_reg(Instruction* inst, const u8 buffer[]);
 void set_reg_operand(Instruction* inst, u8 reg, u8 wide, u8 operand_num);
 void set_effective_address_operand(Instruction* inst, const u8 buffer[], u8 rm, u8 mod, u8 operand_num);
@@ -17,7 +17,9 @@ void decode_acc_mem(Instruction* inst, const u8 buffer[]);
 void decode_im_to_acc(Instruction* inst, const u8 buffer[]);
 void decode_jmp(Instruction* inst, const u8 buffer[]);
 
+u16 reg_state[Reg_count] = { 0 };
 u8 flags = 0;
+u32 ip = 0;
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
@@ -50,32 +52,35 @@ int main(int argc, char *argv[]) {
 }
 
 void run(u8 buffer[], u32 n) {
-    u32 i = 0;
-    u16 reg_state[Reg_count] = { 0 };
-    while (i < n) {
-        Instruction inst = decode(buffer, i);
-        if (i + inst.size <= n) {
-            i += inst.size;
-        } else {
+    while (ip < n) {
+        Instruction inst = decode(buffer);
+        ip += inst.size;
+        if (ip > n) {
             fprintf(stderr, "ERROR: instruction exceeds disassembly region.\n");
             exit(1);
         }
         print_instruction(&inst, stdout);
         printf(" ;");
-        execute_instruction(&inst, reg_state);
+        execute_instruction(&inst);
         printf("\n");
     }
     printf("\n");
     printf("Final registers:\n");
-    print_registers(reg_state);
+    print_registers(reg_state, ip);
 }
 
-void execute_instruction(Instruction* inst, u16 reg_state[]) {
-
+void execute_instruction(Instruction* inst) {
     Operand* dest_op = &inst->operands[0];
     Operand* src_op = &inst->operands[1];
 
-//    u32 wide = inst->flags & FlagWide;
+    OpType op_type = inst->op;
+    if (op_type == OpJne) {
+        if (!(flags & Zero_flag)) {
+            i32 jmp_size = inst->operands[0].s_immediate;
+            ip += jmp_size;
+        }
+        return;
+    }
 
     // determine destination address
     u16 *dest;
@@ -83,7 +88,7 @@ void execute_instruction(Instruction* inst, u16 reg_state[]) {
         RegisterAccess reg = dest_op->reg;
         dest = &reg_state[reg.index];
     } else {
-        assert(false); // shouldn't be here yet
+        assert(false);
     }
 
     // determine src
@@ -96,9 +101,8 @@ void execute_instruction(Instruction* inst, u16 reg_state[]) {
         src = 0;
     }
 
-    u16 before = *dest;
     // do operation
-    OpType op_type = inst->op;
+    u16 before = *dest;
     switch (op_type) {
         case OpMov: {
             *dest = src;
@@ -127,20 +131,19 @@ void execute_instruction(Instruction* inst, u16 reg_state[]) {
     if (op_type != OpCmp) {
         printf(" 0x%x->0x%x", before, *dest);
     }
+    printf(" ip:0x%x->0x%x", inst->address, ip);
     if (op_type == OpSub || op_type == OpCmp) {
-        printf(" flags: ");
+        printf(" flags:");
         if (flags & Zero_flag) printf("Z");
         if (flags & Sign_flag) printf("S");
     }
 }
 
 void disassemble(u8 buffer[], u32 n) {
-    u32 i = 0;
-    while (i < n) {
-        Instruction inst = decode(buffer, i);
-        if (i + inst.size <= n) {
-            i += inst.size;
-        } else {
+    while (ip < n) {
+        Instruction inst = decode(buffer);
+        ip += inst.size;
+        if (ip > n) {
             fprintf(stderr, "ERROR: instruction exceeds disassembly region.\n");
             exit(1);
         }
@@ -149,9 +152,9 @@ void disassemble(u8 buffer[], u32 n) {
     }
 }
 
-Instruction decode(u8 buffer[], u32 idx) {
+Instruction decode(u8 buffer[]) {
     Instruction inst;
-    inst.address = idx;
+    inst.address = ip;
     inst.op = OpNone;
     inst.flags = 0;
 
@@ -250,6 +253,8 @@ Instruction decode(u8 buffer[], u32 idx) {
             inst.op = OpCmp;
             decode_im_to_acc(&inst, buffer);
             return inst;
+        default:
+            break;
     }
 
     // opcodes of len 6
@@ -274,6 +279,8 @@ Instruction decode(u8 buffer[], u32 idx) {
         case 0b100000:
             decode_im_to_rm(&inst, buffer);
             return inst;
+        default:
+            break;
     }
 
     // opcodes of len 4
@@ -283,6 +290,8 @@ Instruction decode(u8 buffer[], u32 idx) {
             inst.op = OpMov;
             decode_im_to_reg(&inst, buffer);
             return inst;
+        default:
+            break;
     }
 
     if (inst.op == OpNone) {
