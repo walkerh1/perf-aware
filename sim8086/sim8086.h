@@ -117,4 +117,10 @@ typedef struct {
     u32 flags;              // flags
 } Instruction;
 
+typedef enum {
+    Zero_flag = (1 << 0),
+    Sign_flag = (1 << 1),
+    Flag_count,
+} Flag;
+
 #endif

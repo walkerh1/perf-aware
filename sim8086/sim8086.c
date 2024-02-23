@@ -17,6 +17,8 @@ void decode_acc_mem(Instruction* inst, const u8 buffer[]);
 void decode_im_to_acc(Instruction* inst, const u8 buffer[]);
 void decode_jmp(Instruction* inst, const u8 buffer[]);
 
+u8 flags = 0;
+
 int main(int argc, char *argv[]) {
     if (argc < 2) {
         fprintf(stderr, "USAGE: %s [8086 machine code file] ...\n", argv[0]);
@@ -59,7 +61,7 @@ void run(u8 buffer[], u32 n) {
             exit(1);
         }
         print_instruction(&inst, stdout);
-        printf(" ; ");
+        printf(" ;");
         execute_instruction(&inst, reg_state);
         printf("\n");
     }
@@ -69,7 +71,6 @@ void run(u8 buffer[], u32 n) {
 }
 
 void execute_instruction(Instruction* inst, u16 reg_state[]) {
-//    OpType op_type = inst->op;
 
     Operand* dest_op = &inst->operands[0];
     Operand* src_op = &inst->operands[1];
@@ -80,7 +81,7 @@ void execute_instruction(Instruction* inst, u16 reg_state[]) {
     u16 *dest;
     if (dest_op->kind == OperandRegister) {
         RegisterAccess reg = dest_op->reg;
-        dest = (u16*)((u8*)&reg_state[reg.index] + reg.offset);
+        dest = &reg_state[reg.index];
     } else {
         assert(false); // shouldn't be here yet
     }
@@ -95,9 +96,42 @@ void execute_instruction(Instruction* inst, u16 reg_state[]) {
         src = 0;
     }
 
-    printf("0x%x->", *dest);
-    *dest = src;
-    printf("0x%x", *dest);
+    u16 before = *dest;
+    // do operation
+    OpType op_type = inst->op;
+    switch (op_type) {
+        case OpMov: {
+            *dest = src;
+            break;
+        }
+        case OpAdd: {
+            *dest += src;
+            break;
+        }
+        case OpSub:
+        case OpCmp: {
+            u16 res = *dest - src;
+
+            if ((res >> 15) & 1) flags |= Sign_flag;
+            else flags &= ~(Sign_flag);
+
+            if (res == 0) flags |= Zero_flag;
+            else flags &= ~(Zero_flag);
+
+            if (op_type == OpSub) *dest -= src;
+            break;
+        }
+        default:
+            break;
+    }
+    if (op_type != OpCmp) {
+        printf(" 0x%x->0x%x", before, *dest);
+    }
+    if (op_type == OpSub || op_type == OpCmp) {
+        printf(" flags: ");
+        if (flags & Zero_flag) printf("Z");
+        if (flags & Sign_flag) printf("S");
+    }
 }
 
 void disassemble(u8 buffer[], u32 n) {
