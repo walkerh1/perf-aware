@@ -85,12 +85,14 @@ void execute_instruction(Instruction* inst, u16 reg_state[]) {
         assert(false); // shouldn't be here yet
     }
 
-    // determine src address
+    // determine src
     u16 src;
     if (src_op->kind == OperandImmediate) {
         src = (u16)src_op->immediate;
+    } else if (src_op->kind == OperandRegister) {
+        src = reg_state[src_op->reg.index];
     } else {
-        assert(false);
+        src = 0;
     }
 
     printf("0x%x->", *dest);
