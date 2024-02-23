@@ -107,5 +107,10 @@ void print_instruction(Instruction* inst, FILE *dest) {
         fprintf(dest, ", ");
         print_operand(inst, 1, dest);
     }
-    fprintf(dest, "\n");
+}
+
+void print_registers(u16 reg_state[]) {
+    for (int i = 1; i < Reg_count; i++) {
+        printf("%8s: 0x%04x (%u)\n", get_reg_name(i, 2), reg_state[i], reg_state[i]);
+    }
 }

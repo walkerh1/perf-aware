@@ -1,8 +1,12 @@
+#include <string.h>
+#include <stdbool.h>
 #include "sim8086.h"
 #include "sim8086_print.h"
 
 void disassemble(u8 buffer[], u32 n);
-Instruction get_next_instruction(u8 buffer[], u32 idx);
+void run(u8 buffer[], u32 n);
+Instruction decode(u8 buffer[], u32 idx);
+void execute_instruction(Instruction* inst, u16 reg_state[]);
 void decode_rm_reg(Instruction* inst, const u8 buffer[]);
 void set_reg_operand(Instruction* inst, u8 reg, u8 wide, u8 operand_num);
 void set_effective_address_operand(Instruction* inst, const u8 buffer[], u8 rm, u8 mod, u8 operand_num);
@@ -19,28 +23,35 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
+    bool execute = false;
     u8 buffer[BUFFER_SIZE];
 
     for (int i = 1; i < argc; i++) {
-        FILE *fp;
-        if ((fp = fopen(argv[1], "rb")) == NULL) {
-            fprintf(stderr, "ERROR: unable to open %s\n", argv[1]);
-            exit(1);
-        };
-
-        u32 bytes_read = fread(buffer, sizeof(u8), BUFFER_SIZE, fp);
-        fclose(fp);
-
-        disassemble(buffer, bytes_read);
+        if (strcmp(argv[i], "-exec") == 0) {
+            execute = true;
+        } else {
+            FILE *fp;
+            if ((fp = fopen(argv[i], "rb")) == NULL) {
+                fprintf(stderr, "ERROR: unable to open %s\n", argv[i]);
+                exit(1);
+            };
+            u32 bytes_read = fread(buffer, sizeof(u8), BUFFER_SIZE, fp);
+            fclose(fp);
+            if (execute) {
+                run(buffer, bytes_read);
+            } else {
+                disassemble(buffer, bytes_read);
+            }
+        }
     }
-
     return EXIT_SUCCESS;
 }
 
-void disassemble(u8 buffer[], u32 n) {
+void run(u8 buffer[], u32 n) {
     u32 i = 0;
+    u16 reg_state[Reg_count] = { 0 };
     while (i < n) {
-        Instruction inst = get_next_instruction(buffer, i);
+        Instruction inst = decode(buffer, i);
         if (i + inst.size <= n) {
             i += inst.size;
         } else {
@@ -48,10 +59,61 @@ void disassemble(u8 buffer[], u32 n) {
             exit(1);
         }
         print_instruction(&inst, stdout);
+        printf(" ; ");
+        execute_instruction(&inst, reg_state);
+        printf("\n");
+    }
+    printf("\n");
+    printf("Final registers:\n");
+    print_registers(reg_state);
+}
+
+void execute_instruction(Instruction* inst, u16 reg_state[]) {
+//    OpType op_type = inst->op;
+
+    Operand* dest_op = &inst->operands[0];
+    Operand* src_op = &inst->operands[1];
+
+//    u32 wide = inst->flags & FlagWide;
+
+    // determine destination address
+    u16 *dest;
+    if (dest_op->kind == OperandRegister) {
+        RegisterAccess reg = dest_op->reg;
+        dest = (u16*)((u8*)&reg_state[reg.index] + reg.offset);
+    } else {
+        assert(false); // shouldn't be here yet
+    }
+
+    // determine src address
+    u16 src;
+    if (src_op->kind == OperandImmediate) {
+        src = (u16)src_op->immediate;
+    } else {
+        assert(false);
+    }
+
+    printf("0x%x->", *dest);
+    *dest = src;
+    printf("0x%x", *dest);
+}
+
+void disassemble(u8 buffer[], u32 n) {
+    u32 i = 0;
+    while (i < n) {
+        Instruction inst = decode(buffer, i);
+        if (i + inst.size <= n) {
+            i += inst.size;
+        } else {
+            fprintf(stderr, "ERROR: instruction exceeds disassembly region.\n");
+            exit(1);
+        }
+        print_instruction(&inst, stdout);
+        printf("\n");
     }
 }
 
-Instruction get_next_instruction(u8 buffer[], u32 idx) {
+Instruction decode(u8 buffer[], u32 idx) {
     Instruction inst;
     inst.address = idx;
     inst.op = OpNone;
@@ -276,6 +338,9 @@ void decode_rm_reg(Instruction* inst, const u8 buffer[]) {
 }
 
 void set_reg_operand(Instruction* inst, u8 reg, u8 wide, u8 operand_num) {
+    if (wide) {
+        inst->flags |= FlagWide;
+    }
     const RegisterAccess reg_table[][2] = {
         {{Reg_a, 0, 1}, {Reg_a, 0, 2}},
         {{Reg_c, 0, 1}, {Reg_c, 0, 2}},

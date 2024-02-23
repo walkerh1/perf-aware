@@ -63,11 +63,6 @@ typedef enum {
     Reg_bp,
     Reg_si,
     Reg_di,
-    Reg_es,
-    Reg_cs,
-    Reg_ss,
-    Reg_ds,
-    Reg_ip,
     Reg_count,
 } Register;
 
