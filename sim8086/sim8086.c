@@ -4,12 +4,13 @@
 #include "sim8086_print.h"
 
 Instruction decode(u8 buffer[]);
+u16 get_memory_address(EffectiveAddress* address);
 void disassemble(u8 buffer[], u32 n);
 void run(u8 buffer[], u32 n);
 void execute_instruction(Instruction* inst);
 void decode_rm_reg(Instruction* inst, const u8 buffer[]);
 void set_reg_operand(Instruction* inst, u8 reg, u8 wide, u8 operand_num);
-void set_effective_address_operand(Instruction* inst, const u8 buffer[], u8 rm, u8 mod, u8 operand_num);
+void set_effective_address_operand(Instruction* inst, const u8 buffer[], u8 wide, u8 rm, u8 mod, u8 operand_num);
 void set_immediate_operand(Instruction* inst, const u8 buffer[], u8 sign, u8 wide, u8 operand_num);
 void decode_im_to_reg(Instruction* inst, const u8 buffer[]);
 void decode_im_to_rm(Instruction* inst, const u8 buffer[]);
@@ -20,6 +21,8 @@ void decode_jmp(Instruction* inst, const u8 buffer[]);
 u16 reg_state[Reg_count] = { 0 };
 u8 flags = 0;
 u32 ip = 0;
+
+u8 memory[1024*1024] = { 0 };
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
@@ -69,6 +72,41 @@ void run(u8 buffer[], u32 n) {
     print_registers(reg_state, ip);
 }
 
+u16 get_memory_address(EffectiveAddress* address) {
+    u32 base = address->base;
+    u16 mem_address = 0;
+    switch (base) {
+        case Ea_direct:
+            break;
+        case Ea_bx_si: {
+            mem_address = reg_state[Reg_b] + reg_state[Reg_si];
+        } break;
+        case Ea_bx_di: {
+            mem_address = reg_state[Reg_b] + reg_state[Reg_di];
+        } break;
+        case Ea_bp_si: {
+            mem_address = reg_state[Reg_bp] + reg_state[Reg_si];
+        } break;
+        case Ea_bp_di: {
+            mem_address = reg_state[Reg_bp] + reg_state[Reg_di];
+        } break;
+        case Ea_si: {
+            mem_address = reg_state[Reg_si];
+        } break;
+        case Ea_di: {
+            mem_address = reg_state[Reg_di];
+        } break;
+        case Ea_bp: {
+            mem_address = reg_state[Reg_bp];
+        } break;
+        case Ea_bx: {
+            mem_address = reg_state[Reg_b];
+        } break;
+    }
+    mem_address += address->displacement;
+    return mem_address;
+}
+
 void execute_instruction(Instruction* inst) {
     Operand* dest_op = &inst->operands[0];
     Operand* src_op = &inst->operands[1];
@@ -87,6 +125,8 @@ void execute_instruction(Instruction* inst) {
     if (dest_op->kind == OperandRegister) {
         RegisterAccess reg = dest_op->reg;
         dest = &reg_state[reg.index];
+    } else if (dest_op->kind == OperandMemory) {
+        dest = (u16*)&memory[get_memory_address(&dest_op->address)];
     } else {
         assert(false);
     }
@@ -97,6 +137,8 @@ void execute_instruction(Instruction* inst) {
         src = (u16)src_op->immediate;
     } else if (src_op->kind == OperandRegister) {
         src = reg_state[src_op->reg.index];
+    } else if (src_op->kind == OperandMemory) {
+        src = memory[get_memory_address(&src_op->address)];
     } else {
         src = 0;
     }
@@ -327,7 +369,7 @@ void decode_acc_mem(Instruction* inst, const u8 buffer[]) {
     u8 w = buffer[idx] & 1;
     inst->size = 1;
     set_reg_operand(inst, 0, w, to_memory);
-    set_effective_address_operand(inst, buffer, 0b110, 0b00, to_memory ? 0 : 1);
+    set_effective_address_operand(inst, buffer, w, 0b110, 0b00, to_memory ? 0 : 1);
 }
 
 void decode_im_to_rm(Instruction* inst, const u8 buffer[]) {
@@ -351,7 +393,7 @@ void decode_im_to_rm(Instruction* inst, const u8 buffer[]) {
     if (mod == 0b11) {
         set_reg_operand(inst, rm, w, 0);
     } else {
-        set_effective_address_operand(inst, buffer, rm, mod, 0);
+        set_effective_address_operand(inst, buffer, w, rm, mod, 0);
     }
     set_immediate_operand(inst, buffer, inst->op == OpMov ? 0 : s, w, 1);
 }
@@ -377,7 +419,7 @@ void decode_rm_reg(Instruction* inst, const u8 buffer[]) {
     if (mod == 0b11) {
         set_reg_operand(inst, rm, w, d);
     } else {
-        set_effective_address_operand(inst, buffer, rm, mod, d);
+        set_effective_address_operand(inst, buffer, w, rm, mod, d);
     }
     set_reg_operand(inst, reg, w, d ? 0 : 1);
 }
@@ -402,9 +444,12 @@ void set_reg_operand(Instruction* inst, u8 reg, u8 wide, u8 operand_num) {
     inst->operands[operand_num] = res;
 }
 
-void set_effective_address_operand(Instruction* inst, const u8 buffer[], u8 rm, u8 mod, u8 operand_num) {
+void set_effective_address_operand(Instruction* inst, const u8 buffer[], u8 wide, u8 rm, u8 mod, u8 operand_num) {
     Operand res;
     res.kind = OperandMemory;
+    if (wide) {
+        inst->flags |= FlagWide;
+    }
     if (mod == 0b00 && rm == 0b110) {
         res.address.base = Ea_direct;
     } else {
@@ -415,7 +460,6 @@ void set_effective_address_operand(Instruction* inst, const u8 buffer[], u8 rm, 
     if (mod == 0b10 || (mod == 0b00 && rm == 0b110)) {
         idx += 2;
         res.address.displacement = (i16)(buffer[idx] << 8) | buffer[idx-1]; // parse as signed
-        inst->flags |= FlagWide;
         inst->size += 2;
     } else if (mod == 0b01) {
         idx += 1;
