@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <assert.h>
+#include <string.h>
+#include <stdbool.h>
 
 typedef uint8_t u8;
 typedef uint16_t u16;
@@ -122,5 +124,12 @@ typedef enum {
     Sign_flag = (1 << 1),
     Flag_count,
 } Flag;
+
+typedef struct {
+    OperandType dest;
+    OperandType src;
+    u32 clock;
+    bool add_ea;
+} ClockEntry;
 
 #endif

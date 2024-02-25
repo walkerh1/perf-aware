@@ -1,11 +1,10 @@
-#include <string.h>
-#include <stdbool.h>
 #include "sim8086.h"
 #include "sim8086_print.h"
 
 Instruction decode(u8 buffer[]);
 u16 get_memory_address(EffectiveAddress* address);
-void disassemble(u8 buffer[], u32 n);
+u32 get_ea_clock(EffectiveAddress *ea);
+u32 get_clock(Instruction* inst);
 void run(u8 buffer[], u32 n);
 void execute_instruction(Instruction* inst);
 void decode_rm_reg(Instruction* inst, const u8 buffer[]);
@@ -24,18 +23,22 @@ u32 ip = 0;
 
 u8 memory[1024*1024] = { 0 };
 
+bool clocks = false;
+bool execute = false;
+
 int main(int argc, char *argv[]) {
     if (argc < 2) {
         fprintf(stderr, "USAGE: %s [8086 machine code file] ...\n", argv[0]);
         exit(1);
     }
 
-    bool execute = false;
     u8 buffer[BUFFER_SIZE];
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-exec") == 0) {
             execute = true;
+        } else if (strcmp(argv[i], "-clocks") == 0) {
+            clocks = true;
         } else {
             FILE *fp;
             if ((fp = fopen(argv[i], "rb")) == NULL) {
@@ -44,17 +47,14 @@ int main(int argc, char *argv[]) {
             };
             u32 bytes_read = fread(buffer, sizeof(u8), BUFFER_SIZE, fp);
             fclose(fp);
-            if (execute) {
-                run(buffer, bytes_read);
-            } else {
-                disassemble(buffer, bytes_read);
-            }
+            run(buffer, bytes_read);
         }
     }
     return EXIT_SUCCESS;
 }
 
 void run(u8 buffer[], u32 n) {
+    u32 time = 0;
     while (ip < n) {
         Instruction inst = decode(buffer);
         ip += inst.size;
@@ -63,13 +63,69 @@ void run(u8 buffer[], u32 n) {
             exit(1);
         }
         print_instruction(&inst, stdout);
-        printf(" ;");
-        execute_instruction(&inst);
+        if (execute || clocks) printf(" ;");
+        if (execute) execute_instruction(&inst);
+        if (execute && clocks) printf(" |");
+        if (clocks) {
+            u32 inst_time = get_clock(&inst);
+            time += inst_time;
+            printf(" Clock: +%u = %u", inst_time, time);
+        }
         printf("\n");
     }
-    printf("\n");
-    printf("Final registers:\n");
-    print_registers(reg_state, ip);
+
+    if (execute) {
+        printf("\n");
+        printf("Final registers:\n");
+        print_registers(reg_state, ip, stdout);
+    }
+}
+
+u32 get_ea_clock(EffectiveAddress *ea) {
+    if (ea->base == Ea_direct) {
+        return 6;
+    } else if (ea->base == Ea_bx || ea->base == Ea_bp || ea->base == Ea_si || ea->base == Ea_di) {
+        return (ea->displacement) ? 9 : 5;
+    } else if (ea->base == Ea_bp_di || ea->base == Ea_bx_si) {
+        return (ea->displacement) ? 11 : 7;
+    } else {
+        return (ea->displacement) ? 12 : 8;
+    }
+}
+
+u32 get_clock(Instruction* inst) {
+    const ClockEntry op_clocks[][7] = {
+            [OpMov] = {
+                    { OperandMemory, OperandImmediate, 10, false },     // memory, accumulator
+                    { OperandImmediate, OperandMemory, 10, false },     // accumulator, memory
+                    { OperandRegister, OperandRegister, 2, false },     // register, register
+                    { OperandRegister, OperandMemory, 8, true },        // register, memory
+                    { OperandMemory, OperandRegister, 9, true },        // memory, register
+                    { OperandRegister, OperandImmediate, 4, false },    // register, immediate
+                    { OperandMemory, OperandImmediate, 10, true },      // memory, immediate
+            },
+            [OpAdd] = {
+                    { OperandRegister, OperandRegister, 3, false },     // register, register
+                    { OperandRegister, OperandMemory, 9, true },        // register, memory
+                    { OperandMemory, OperandRegister, 16, true },       // memory, register
+                    { OperandRegister, OperandImmediate, 4, false },    // register, immediate
+                    { OperandMemory, OperandImmediate, 17, true },      // memory, immediate
+                    { OperandMemory, OperandImmediate, 4, false },      // accumulator, memory
+            }
+    };
+    u32 res = 0;
+    for (int i = 0; i < 7; i++) {
+        ClockEntry entry = op_clocks[inst->op][i];
+        if (entry.dest == inst->operands[0].kind && entry.src == inst->operands[1].kind) {
+            res = entry.clock;
+            if (entry.add_ea) {
+                Operand addr = inst->operands[0].kind == OperandMemory ? inst->operands[0] : inst->operands[1];
+                res += get_ea_clock(&addr.address);
+            }
+            break;
+        }
+    }
+    return res;
 }
 
 u16 get_memory_address(EffectiveAddress* address) {
@@ -102,6 +158,8 @@ u16 get_memory_address(EffectiveAddress* address) {
         case Ea_bx: {
             mem_address = reg_state[Reg_b];
         } break;
+        default:
+            break;
     }
     mem_address += address->displacement;
     return mem_address;
@@ -181,19 +239,6 @@ void execute_instruction(Instruction* inst) {
     }
 }
 
-void disassemble(u8 buffer[], u32 n) {
-    while (ip < n) {
-        Instruction inst = decode(buffer);
-        ip += inst.size;
-        if (ip > n) {
-            fprintf(stderr, "ERROR: instruction exceeds disassembly region.\n");
-            exit(1);
-        }
-        print_instruction(&inst, stdout);
-        printf("\n");
-    }
-}
-
 Instruction decode(u8 buffer[]) {
     Instruction inst;
     inst.address = ip;
@@ -263,6 +308,8 @@ Instruction decode(u8 buffer[]) {
             break;
         case 0b11100011:
             inst.op = OpJcxz;
+            break;
+        default:
             break;
     }
 
