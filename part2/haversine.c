@@ -1,7 +1,10 @@
 #include "haversine.h"
 
 #define MAX_IDENT 64            // max allowed length for an identifier in JSON
+#define MAX_JSON_DIGITS 32      // max allowed digits in a given JSON number
 #define MIN_JSON_PAIR_SIZE 24   // min 6 bytes (e.g. '"x0":0') * 4 coordinates == 24 bytes min
+
+// ========================================= Types ======================================== //
 
 typedef struct {
     size_t count;
@@ -36,10 +39,7 @@ typedef struct {
     f64 x1, y1;
 } Pair;
 
-buffer load_json(char *);
-Token *tokenize(buffer);
-
-// =================================== Haversine Formula ===================================//
+// =================================== Haversine Formula ================================== //
 
 f64 square(f64 a) {
     f64 res = (a*a);
@@ -70,21 +70,73 @@ f64 haversine(f64 x0, f64 y0, f64 x1, f64 y1, f64 earth_radius) {
     return res;
 }
 
-// ======================================= Tokenizer =======================================//
+// ======================================= Tokenizer ====================================== //
 
 char *curr_byte;    // pointer to current byte in json input
 Token token = {};   // current token
 
-void grab_identifier() {
+void set_identifier() {
+    // PRE: assume curr_byte is '"' when this function is called; if
+    // it isn't, that is a bug in the calling code not this function.
+    curr_byte++;
+    u32 i = 0;
+    while (*curr_byte != '"') {
+        token.identifier[i] = *curr_byte;
+        i++;
+        curr_byte++;
+    }
 
+    token.identifier[i] = '\0'; // close off identifier with null byte
+
+    if (i == 0) {
+        fprintf(stderr, "PARSING ERROR: cannot have empty identifier in JSON\n");
+        exit(1);
+    }
+
+    curr_byte++; // advance past closing '"'
+
+    // POST: curr_byte is at first char after closing '"' of identifier
 }
 
-void grab_number() {
+void set_number() {
+    // PRE: assume curr_byte is a digit or '-' when this function is called;
+    // if it isn't, that is a bug in the calling code not this function.
+    char num[MAX_JSON_DIGITS];
+    u32 i = 0;
 
+    if (*curr_byte == '-') {
+        num[i++] = *curr_byte;
+        curr_byte++;
+    }
+
+    while (isdigit(*curr_byte)) {
+        num[i++] = *curr_byte;
+        curr_byte++;
+    }
+
+    if (*curr_byte == '.') {
+        num[i++] = *curr_byte;
+        curr_byte++;
+        if (!isdigit(*curr_byte)) {
+            fprintf(stderr, "PARSING ERROR: malformed number in JSON input\n");
+            exit(1);
+        }
+    }
+
+    while (isdigit(*curr_byte)) {
+        num[i++] = *curr_byte;
+        curr_byte++;
+    }
+
+    num[i] = '\0';
+
+    token.number = atof(num);
+
+    // POST: curr_byte is at first char after the last digit in the number
 }
 
 void next_token() {
-    while (*curr_byte == ' ') {
+    while (*curr_byte == ' ' || *curr_byte == '\n' || *curr_byte == '\t') {
         curr_byte++;
     }
 
@@ -97,29 +149,56 @@ void next_token() {
         case '}':
             token.token_type = TOKEN_RBRACE;
             break;
-        case '\"':
-            grab_identifier();
+        case ':':
+            token.token_type = TOKEN_COLON;
+            break;
+        case ',':
+            token.token_type = TOKEN_COMMA;
+            break;
+        case '[':
+            token.token_type = TOKEN_LBRACKET;
+            break;
+        case ']':
+            token.token_type = TOKEN_RBRACKET;
+            break;
+        case '"':
+            token.token_type = TOKEN_IDENTIFIER;
+            set_identifier();
             break;
         default:
             if (c == '-' || isdigit(c)) {
-                grab_number();
+                token.token_type = TOKEN_FLOAT;
+                set_number();
+            } else if (c == '\0') {
+                return;
+            } else {
+                fprintf(stderr, "PARSING ERROR: unknown token '%d'\n", c);
+                exit(1);
             }
             break;
     }
+
+    // advance to next byte for next time next_token is called
+    curr_byte++;
 }
 
-// ======================================== Parser =========================================//
+// ======================================== Parser ======================================== //
 
 void parse_haversine_pairs(buffer input_json, Pair *pairs) {
     curr_byte = (char *)input_json.data;
     next_token();
+
+    // expect first token to be LBrace
     if (token.token_type != TOKEN_LBRACE) {
         fprintf(stderr, "PARSING ERROR: JSON input must begin with '{'\n");
     }
 
+    while (*curr_byte != '\0') {
+        next_token();
+    }
 }
 
-// ===================================== Main Routine ======================================//
+// ===================================== Main Routine ===================================== //
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
@@ -137,17 +216,18 @@ int main(int argc, char *argv[]) {
     }
     struct stat file_stat;
     stat(filename, &file_stat);
-    size_t count = file_stat.st_size;
+    size_t count = file_stat.st_size + 1; // add 1 for sentinel null byte
     if ((input_json.data = (u8 *) malloc(count)) == NULL) {
         fprintf(stderr, "ERROR: unable to allocate %lu bytes\n", count);
         exit(1);
     }
-    input_json.count = count;
+    input_json.count = count-1;
     if ((fread(input_json.data, input_json.count, 1, file)) != 1) {
         fprintf(stderr, "ERROR: unable to read \"%s\"\n", filename);
         free(input_json.data);
         exit(1);
     }
+    input_json.data[input_json.count] = '\0';
     fclose(file);
 
     // allocate memory for haversine pairs (just estimate size based on input_json size)
