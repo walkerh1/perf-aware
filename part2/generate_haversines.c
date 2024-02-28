@@ -18,7 +18,7 @@ f64 random_degree(f64 centre, f64 radius) {
     upper = min(upper, X_MAX);
     lower = max(lower, -X_MAX);
 
-    f64 res = random_f64(upper, lower);
+    f64 res = random_f64(lower, upper);
     return res;
 }
 
