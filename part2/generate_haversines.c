@@ -1,4 +1,5 @@
-#include "haversine.c"
+#include "haversine.h"
+#include "haversine_formula.c"
 
 u64 seed = 0;
 u64 pair_count = 0;

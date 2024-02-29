@@ -1,10 +1,11 @@
 #include "haversine.h"
+#include "haversine_formula.c"
 
 #define MAX_IDENT 64            // max allowed length for an identifier in JSON
 #define MAX_JSON_DIGITS 32      // max allowed digits in a given JSON number
 #define MIN_JSON_PAIR_SIZE 24   // min 6 bytes (e.g. '"x0":0') * 4 coordinates == 24 bytes min
 
-// ========================================= Types ======================================== //
+// ====================================== Token Types ===================================== //
 
 typedef struct {
     size_t count;
@@ -27,78 +28,90 @@ typedef enum {
 } TokenType;
 
 typedef struct {
-    TokenType token_type;
+    TokenType type;
     union {
         f64 number;
         char identifier[MAX_IDENT];
     };
 } Token;
 
+// ===================================== Parser Types ===================================== //
+
+typedef enum {
+    ELEM_NONE,
+
+    ELEM_IDENTIFIER,
+    ELEM_FLOAT,
+    ELEM_DICT,
+    ELEM_ARRAY,
+
+    ELEM_COUNT,
+} JsonElementType;
+
+typedef struct JsonElement JsonElement;
+
+typedef struct {
+    char *key;
+    JsonElement *value;
+    JsonElement *next;
+} DictPair;
+
+typedef struct {
+    DictPair *entries;
+} JsonDict;
+
+typedef struct {
+    JsonElement *value;
+    JsonElement *next;
+} ArrayElement;
+
+typedef struct {
+    ArrayElement *entries;
+} JsonArray;
+
+struct JsonElement {
+    JsonElementType type;
+    union {
+        JsonDict *dict;
+        JsonArray *array;
+        char *identifier;
+        f64 number;
+    };
+};
+
 typedef struct {
     f64 x0, y0;
     f64 x1, y1;
 } Pair;
 
-// =================================== Haversine Formula ================================== //
-
-f64 square(f64 a) {
-    f64 res = (a*a);
-    return res;
-}
-
-f64 radians_from_degrees(f64 degrees) {
-    f64 res = 0.01745329251994329577 * degrees;
-    return res;
-}
-
-f64 haversine(f64 x0, f64 y0, f64 x1, f64 y1, f64 earth_radius) {
-    f64 lat1 = y0;
-    f64 lat2 = y1;
-    f64 lon1 = x0;
-    f64 lon2 = x1;
-
-    f64 dLat = radians_from_degrees(lat2 - lat1);
-    f64 dLon = radians_from_degrees(lon2 - lon1);
-    lat1 = radians_from_degrees(lat1);
-    lat2 = radians_from_degrees(lat2);
-
-    f64 a = square(sin(dLat/2.0)) + cos(lat1)*cos(lat2)*square(sin(dLon/2));
-    f64 c = 2.0*asin(sqrt(a));
-
-    f64 res = earth_radius * c;
-
-    return res;
-}
-
 // ======================================= Tokenizer ====================================== //
 
 char *curr_byte;    // pointer to current byte in json input
-Token token = {};   // current token
 
-void set_identifier() {
+void set_identifier(Token *token) {
     // PRE: assume curr_byte is '"' when this function is called; if
     // it isn't, that is a bug in the calling code not this function.
     curr_byte++;
     u32 i = 0;
     while (*curr_byte != '"') {
-        token.identifier[i] = *curr_byte;
+        token->identifier[i] = *curr_byte;
         i++;
         curr_byte++;
     }
 
-    token.identifier[i] = '\0'; // close off identifier with null byte
+    token->identifier[i] = '\0'; // close off identifier with null byte
 
     if (i == 0) {
         fprintf(stderr, "PARSING ERROR: cannot have empty identifier in JSON\n");
         exit(1);
     }
 
-    curr_byte++; // advance past closing '"'
+    curr_byte++;
 
-    // POST: curr_byte is at first char after closing '"' of identifier
+    // POST: curr_byte is at first char after the closing '"' of identifier
 }
 
-void set_number() {
+void set_number(Token *token) {
     // PRE: assume curr_byte is a digit or '-' when this function is called;
     // if it isn't, that is a bug in the calling code not this function.
     char num[MAX_JSON_DIGITS];
@@ -130,47 +143,48 @@ void set_number() {
 
     num[i] = '\0';
 
-    token.number = atof(num);
+    token->number = atof(num);
 
     // POST: curr_byte is at first char after the last digit in the number
 }
 
-void next_token() {
+Token next_token() {
     while (*curr_byte == ' ' || *curr_byte == '\n' || *curr_byte == '\t') {
         curr_byte++;
     }
 
-    char c = *curr_byte;
+    Token token = {};
 
+    char c = *curr_byte;
     switch (c) {
         case '{':
-            token.token_type = TOKEN_LBRACE;
+            token.type = TOKEN_LBRACE;
             break;
         case '}':
-            token.token_type = TOKEN_RBRACE;
+            token.type = TOKEN_RBRACE;
             break;
         case ':':
-            token.token_type = TOKEN_COLON;
+            token.type = TOKEN_COLON;
             break;
         case ',':
-            token.token_type = TOKEN_COMMA;
+            token.type = TOKEN_COMMA;
             break;
         case '[':
-            token.token_type = TOKEN_LBRACKET;
+            token.type = TOKEN_LBRACKET;
             break;
         case ']':
-            token.token_type = TOKEN_RBRACKET;
+            token.type = TOKEN_RBRACKET;
             break;
         case '"':
-            token.token_type = TOKEN_IDENTIFIER;
-            set_identifier();
+            token.type = TOKEN_IDENTIFIER;
+            set_identifier(&token);
             break;
         default:
             if (c == '-' || isdigit(c)) {
-                token.token_type = TOKEN_FLOAT;
-                set_number();
+                token.type = TOKEN_FLOAT;
+                set_number(&token);
             } else if (c == '\0') {
-                return;
+                token.type = TOKEN_NONE;
             } else {
                 fprintf(stderr, "PARSING ERROR: unknown token '%d'\n", c);
                 exit(1);
@@ -178,24 +192,52 @@ void next_token() {
             break;
     }
 
-    // advance to next byte for next time next_token is called
-    curr_byte++;
+    curr_byte++; // advance to next byte for next time next_token is called
+
+    return token;
 }
 
 // ======================================== Parser ======================================== //
 
-void parse_haversine_pairs(buffer input_json, Pair *pairs) {
+JsonElement *parse_json_element() {
+    JsonElement *res = (JsonElement *) malloc(sizeof(JsonElement));
+
+    Token token = next_token();
+    switch (token.type) {
+        case TOKEN_LBRACE:
+            res->type = ELEM_DICT;
+            break;
+        case TOKEN_LBRACKET:
+            res->type = ELEM_ARRAY;
+            break;
+        case TOKEN_IDENTIFIER:
+            res->type = ELEM_IDENTIFIER;
+            res->identifier = token.identifier;
+            break;
+        case TOKEN_FLOAT:
+            res->type = ELEM_FLOAT;
+            break;
+        case TOKEN_NONE:
+            res->type = ELEM_NONE;
+            break;
+        default:
+            fprintf(stderr, "ERROR: malformed JSON\n");
+            exit(1);
+    }
+
+    return res;
+}
+
+JsonElement *parse_json(buffer input_json) {
     curr_byte = (char *)input_json.data;
-    next_token();
 
-    // expect first token to be LBrace
-    if (token.token_type != TOKEN_LBRACE) {
-        fprintf(stderr, "PARSING ERROR: JSON input must begin with '{'\n");
-    }
+    JsonElement *top_element = parse_json_element();
 
-    while (*curr_byte != '\0') {
-        next_token();
-    }
+    return top_element;
+}
+
+void parse_haversine_pairs(buffer input_json, Pair *pairs) {
+//    JsonElement *json = parse_json(input_json);
 }
 
 // ===================================== Main Routine ===================================== //

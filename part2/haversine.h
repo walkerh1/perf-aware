@@ -1,3 +1,6 @@
+#ifndef PERF_AWARE_HAVERSINE_H
+#define PERF_AWARE_HAVERSINE_H
+
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,8 +15,6 @@
 #define X_MAX 180
 #define Y_MAX 90
 
-
-
 #define min(a, b) (a) <= (b) ? (a) : (b)
 #define max(a, b) (a) >= (b) ? (a) : (b)
 
@@ -24,3 +25,5 @@ typedef int64_t i64;
 typedef uint64_t u64;
 
 typedef double f64;
+
+#endif //PERF_AWARE_HAVERSINE_H
