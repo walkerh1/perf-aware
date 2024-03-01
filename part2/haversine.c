@@ -404,16 +404,16 @@ int main(int argc, char *argv[]) {
     // parse input JSON into haversine pairs
     u64 n = parse_haversine_pairs(input_json, pairs, max_pair_count);
 
-//    // test json parsing worked
-//    for (int i = 0; i < n; i++) {
-//        printf("x0: %.16f, ", pairs->x0);
-//        printf("y0: %.16f, ", pairs->y0);
-//        printf("x1: %.16f, ", pairs->x1);
-//        printf("y1: %.16f\n", pairs->y1);
-//        pairs++;
-//    }
+    // sum haversine distances
+    f64 sum = 0;
+    for (int i = 0; i < n; i++) {
+        sum += haversine(pairs[i].x0, pairs[i].y0, pairs[i].x1, pairs[i].y1, EARTH_RADIUS);
+    }
 
-    // TODO: sum haversine distances
+    // report
+    fprintf(stdout, "Input size: %zu bytes\n", input_json.count);
+    fprintf(stdout, "Pair count: %llu\n", n);
+    fprintf(stdout, "Haversine average: %.16f\n", sum / (f64)n);
 
     // free allocated memory
     free(haversine_pairs.data);
