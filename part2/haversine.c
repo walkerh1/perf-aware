@@ -49,21 +49,23 @@ typedef enum {
 } JsonElementType;
 
 typedef struct JsonElement JsonElement;
+typedef struct DictPair DictPair;
+typedef struct ArrayElement ArrayElement;
 
-typedef struct {
+struct DictPair {
     char *key;
     JsonElement *value;
-    JsonElement *next;
-} DictPair;
+    DictPair *next;
+};
 
 typedef struct {
     DictPair *entries;
 } JsonDict;
 
-typedef struct {
+struct ArrayElement {
     JsonElement *value;
-    JsonElement *next;
-} ArrayElement;
+    ArrayElement *next;
+};
 
 typedef struct {
     ArrayElement *entries;
@@ -106,9 +108,7 @@ void set_identifier(Token *token) {
         exit(1);
     }
 
-    curr_byte++;
-
-    // POST: curr_byte is at first char after the closing '"' of identifier
+    // POST: curr_byte is at last char of identifier
 }
 
 void set_number(Token *token) {
@@ -140,12 +140,12 @@ void set_number(Token *token) {
         num[i++] = *curr_byte;
         curr_byte++;
     }
-
+    curr_byte--;
     num[i] = '\0';
 
     token->number = atof(num);
 
-    // POST: curr_byte is at first char after the last digit in the number
+    // POST: curr_byte is at last char of number string
 }
 
 Token next_token() {
@@ -199,23 +199,100 @@ Token next_token() {
 
 // ======================================== Parser ======================================== //
 
-JsonElement *parse_json_element() {
-    JsonElement *res = (JsonElement *) malloc(sizeof(JsonElement));
+JsonElement *parse_json_element(Token *token);
+
+JsonDict *parse_dictionary() {
+    JsonDict *res = (JsonDict *) malloc(sizeof(JsonDict));
 
     Token token = next_token();
-    switch (token.type) {
+    if (token.type == TOKEN_RBRACE) {
+        res->entries = NULL;
+        return res;
+    }
+
+    DictPair *entry = (DictPair *) malloc(sizeof(DictPair));
+    res->entries = entry;
+    while (token.type != TOKEN_RBRACE) {
+        if (token.type != TOKEN_IDENTIFIER) {
+            fprintf(stderr, "PARSING ERROR: expected identifier for dictionary key (%u)\n", token.type);
+            exit(1);
+        }
+        entry->key = token.identifier;
+
+        token = next_token();
+        if (token.type != TOKEN_COLON) {
+            fprintf(stderr, "PARSING ERROR: expected colon after identifier in dictionary entry\n");
+            exit(1);
+        }
+
+        token = next_token();
+        JsonElement *value = parse_json_element(&token);
+        entry->value = value;
+
+        token = next_token();
+        if (token.type == TOKEN_COMMA) {
+            entry->next = (DictPair *) malloc(sizeof(DictPair));
+            entry = entry->next;
+            token = next_token();
+            if (token.type == TOKEN_RBRACE) {
+                fprintf(stderr, "PARSING ERROR: unexpected '}' after ','\n");
+                exit(1);
+            }
+        } else {
+            entry->next = NULL;
+        }
+    }
+
+    return res;
+}
+
+JsonArray *parse_array() {
+    JsonArray *res = (JsonArray *) malloc(sizeof(JsonArray));
+
+    Token token = next_token();
+    if (token.type == TOKEN_RBRACKET) {
+        res->entries = NULL;
+        return res;
+    }
+
+    ArrayElement *entry = (ArrayElement *) malloc(sizeof(ArrayElement));
+    res->entries = entry;
+    while (token.type != TOKEN_RBRACKET) {
+        entry->value = parse_json_element(&token);
+        entry->next = (ArrayElement *) malloc(sizeof(ArrayElement));
+        entry = entry->next;
+        token = next_token();
+        if (token.type == TOKEN_COMMA) {
+            token = next_token();
+            if (token.type == TOKEN_RBRACKET) {
+                fprintf(stderr, "PARSING ERROR: unexpected ']' after ','\n");
+                exit(1);
+            }
+        }
+    }
+
+    return res;
+}
+
+JsonElement *parse_json_element(Token *token) {
+    JsonElement *res = (JsonElement *) malloc(sizeof(JsonElement));
+
+    switch (token->type) {
         case TOKEN_LBRACE:
             res->type = ELEM_DICT;
+            res->dict = parse_dictionary();
             break;
         case TOKEN_LBRACKET:
             res->type = ELEM_ARRAY;
+            res->array = parse_array();
             break;
         case TOKEN_IDENTIFIER:
             res->type = ELEM_IDENTIFIER;
-            res->identifier = token.identifier;
+            res->identifier = token->identifier;
             break;
         case TOKEN_FLOAT:
             res->type = ELEM_FLOAT;
+            res->number = token->number;
             break;
         case TOKEN_NONE:
             res->type = ELEM_NONE;
@@ -231,13 +308,14 @@ JsonElement *parse_json_element() {
 JsonElement *parse_json(buffer input_json) {
     curr_byte = (char *)input_json.data;
 
-    JsonElement *top_element = parse_json_element();
+    Token token = next_token();
+    JsonElement *top_element = parse_json_element(&token);
 
     return top_element;
 }
 
 void parse_haversine_pairs(buffer input_json, Pair *pairs) {
-//    JsonElement *json = parse_json(input_json);
+    JsonElement *json = parse_json(input_json);
 }
 
 // ===================================== Main Routine ===================================== //
