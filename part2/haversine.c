@@ -53,7 +53,7 @@ typedef struct DictPair DictPair;
 typedef struct ArrayElement ArrayElement;
 
 struct DictPair {
-    char *key;
+    char key[MAX_IDENT];
     JsonElement *value;
     DictPair *next;
 };
@@ -217,7 +217,7 @@ JsonDict *parse_dictionary() {
             fprintf(stderr, "PARSING ERROR: expected identifier for dictionary key (%u)\n", token.type);
             exit(1);
         }
-        entry->key = token.identifier;
+        strcpy(entry->key, token.identifier);
 
         token = next_token();
         if (token.type != TOKEN_COLON) {
@@ -259,8 +259,6 @@ JsonArray *parse_array() {
     res->entries = entry;
     while (token.type != TOKEN_RBRACKET) {
         entry->value = parse_json_element(&token);
-        entry->next = (ArrayElement *) malloc(sizeof(ArrayElement));
-        entry = entry->next;
         token = next_token();
         if (token.type == TOKEN_COMMA) {
             token = next_token();
@@ -268,6 +266,10 @@ JsonArray *parse_array() {
                 fprintf(stderr, "PARSING ERROR: unexpected ']' after ','\n");
                 exit(1);
             }
+            entry->next = (ArrayElement *) malloc(sizeof(ArrayElement));
+            entry = entry->next;
+        } else {
+            entry->next = NULL;
         }
     }
 
@@ -314,8 +316,41 @@ JsonElement *parse_json(buffer input_json) {
     return top_element;
 }
 
-void parse_haversine_pairs(buffer input_json, Pair *pairs) {
-    JsonElement *json = parse_json(input_json);
+JsonElement *lookup(JsonElement *dict, const char *key) {
+    DictPair *curr = dict->dict->entries;
+    while (strcmp(curr->key, key) != 0) {
+        curr = curr->next;
+    }
+    return curr->value;
+}
+
+f64 unwrap_number(JsonElement *number) {
+    assert(number->type == ELEM_FLOAT);
+    return number->number;
+}
+
+u64 parse_haversine_pairs(buffer input_json, Pair *pairs, u64 max_count) {
+    JsonElement *parsed_json = parse_json(input_json);
+    JsonElement *pairs_array = lookup(parsed_json, "pairs");
+
+    if (pairs_array->type != ELEM_ARRAY) {
+        fprintf(stderr, "LOOKUP ERROR: expected an array\n");
+        exit(1);
+    }
+
+    u64 count = 0;
+    for (ArrayElement *element = pairs_array->array->entries; element && count < max_count; element = element->next) {
+        JsonElement *dict = element->value;
+        assert(dict->type == ELEM_DICT);
+        pairs->x0 = unwrap_number(lookup(dict, "x0"));
+        pairs->y0 = unwrap_number(lookup(dict, "y0"));
+        pairs->x1 = unwrap_number(lookup(dict, "x1"));
+        pairs->y1 = unwrap_number(lookup(dict, "y1"));
+        pairs++;
+        count++;
+    }
+
+    return count;
 }
 
 // ===================================== Main Routine ===================================== //
@@ -367,7 +402,16 @@ int main(int argc, char *argv[]) {
     Pair *pairs = (Pair *)haversine_pairs.data;
 
     // parse input JSON into haversine pairs
-    parse_haversine_pairs(input_json, pairs);
+    u64 n = parse_haversine_pairs(input_json, pairs, max_pair_count);
+
+//    // test json parsing worked
+//    for (int i = 0; i < n; i++) {
+//        printf("x0: %.16f, ", pairs->x0);
+//        printf("y0: %.16f, ", pairs->y0);
+//        printf("x1: %.16f, ", pairs->x1);
+//        printf("y1: %.16f\n", pairs->y1);
+//        pairs++;
+//    }
 
     // TODO: sum haversine distances
 
