@@ -18,8 +18,7 @@ u64 read_os_timer(void) {
 
 u64 read_cpu_timer(void) {
     u64 value;
-    asm("isb; mrs %0, CNTVCT_EL0" : "=r"(value));
-    printf("CNTVCT_EL0 = 0x%016llX\n", value);
+    asm volatile("mrs %0, cntvct_el0" : "=r"(value));
     return value;
 }
 
