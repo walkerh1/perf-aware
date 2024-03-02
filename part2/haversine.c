@@ -1,5 +1,6 @@
 #include "haversine.h"
 #include "haversine_formula.c"
+#include "haversine_clock.c"
 
 #define MAX_IDENT 64            // max allowed length for an identifier in JSON
 #define MAX_JSON_DIGITS 32      // max allowed digits in a given JSON number
@@ -361,33 +362,32 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    // open json file > determine size of file > allocate memory for data > and read file into memory
+    // declare cpu timers
+    u64 begin_freq = 0;
+    u64 startup_freq = 0;
+    u64 read_freq = 0;
+    u64 parse_freq = 0;
+    u64 sum_freq = 0;
+    u64 end_freq = 0;
+
+    begin_freq = read_cpu_timer();
+
+    // allocate all memory required for program
     char *filename = argv[1];
     buffer input_json = {};
-    FILE *file;
-    if ((file = fopen(filename, "rb")) == NULL) {
-        fprintf(stderr, "ERROR: unable to open \"%s\"\n", filename);
-        exit(1);
-    }
+
     struct stat file_stat;
     stat(filename, &file_stat);
     size_t count = file_stat.st_size + 1; // add 1 for sentinel null byte
+
     if ((input_json.data = (u8 *) malloc(count)) == NULL) {
         fprintf(stderr, "ERROR: unable to allocate %lu bytes\n", count);
         exit(1);
     }
-    input_json.count = count-1;
-    if ((fread(input_json.data, input_json.count, 1, file)) != 1) {
-        fprintf(stderr, "ERROR: unable to read \"%s\"\n", filename);
-        free(input_json.data);
-        exit(1);
-    }
-    input_json.data[input_json.count] = '\0';
-    fclose(file);
 
-    // allocate memory for haversine pairs (just estimate size based on input_json size)
     buffer haversine_pairs = {};
-    u64 max_pair_count = input_json.count / MIN_JSON_PAIR_SIZE;
+    input_json.count = count-1;
+    u64 max_pair_count = input_json.count / MIN_JSON_PAIR_SIZE; // just estimate size based on input_json size)
     if (max_pair_count == 0) {
         fprintf(stderr, "ERROR: malformed JSON input\n");
         exit(1);
@@ -398,17 +398,37 @@ int main(int argc, char *argv[]) {
     }
     haversine_pairs.count = max_pair_count * sizeof(Pair);
 
-    // cast u8 array to Pair array
-    Pair *pairs = (Pair *)haversine_pairs.data;
+    startup_freq = read_cpu_timer();
+
+    // open and read json file into memory
+    FILE *file;
+    if ((file = fopen(filename, "rb")) == NULL) {
+        fprintf(stderr, "ERROR: unable to open \"%s\"\n", filename);
+        exit(1);
+    }
+    if ((fread(input_json.data, input_json.count, 1, file)) != 1) {
+        fprintf(stderr, "ERROR: unable to read \"%s\"\n", filename);
+        free(input_json.data);
+        exit(1);
+    }
+    input_json.data[input_json.count] = '\0';
+    fclose(file);
+
+    read_freq = read_cpu_timer();
 
     // parse input JSON into haversine pairs
+    Pair *pairs = (Pair *)haversine_pairs.data; // cast u8 array to Pair array
     u64 n = parse_haversine_pairs(input_json, pairs, max_pair_count);
+
+    parse_freq = read_cpu_timer();
 
     // sum haversine distances
     f64 sum = 0;
     for (int i = 0; i < n; i++) {
         sum += haversine(pairs[i].x0, pairs[i].y0, pairs[i].x1, pairs[i].y1, EARTH_RADIUS);
     }
+
+    sum_freq = read_cpu_timer();
 
     // report
     fprintf(stdout, "Input size: %zu bytes\n", input_json.count);
@@ -418,6 +438,28 @@ int main(int argc, char *argv[]) {
     // free allocated memory
     free(haversine_pairs.data);
     free(input_json.data);
+
+    end_freq = read_cpu_timer();
+
+    // profiling report
+    u64 total_cpu_elapsed = end_freq - begin_freq;
+    u64 cpu_freq = estimate_cpu_timer_freq();
+    fprintf(stdout, "Total time: %.4fms (CPU freq %llu)\n", 1000.0 * (f64)total_cpu_elapsed / (f64)cpu_freq, cpu_freq);
+
+    u64 startup = startup_freq - begin_freq;
+    fprintf(stdout, "\tStartup: %llu (%.2f%%)\n", startup, (f64)startup / (f64)total_cpu_elapsed * 100);
+
+    u64 read = read_freq - startup_freq;
+    fprintf(stdout, "\tRead: %llu (%.2f%%)\n", read, (f64)read / (f64)total_cpu_elapsed * 100);
+
+    u64 parse = parse_freq - read_freq;
+    fprintf(stdout, "\tParse: %llu (%.2f%%)\n", parse, (f64)parse / (f64)total_cpu_elapsed * 100);
+
+    u64 sum_total = sum_freq - parse_freq;
+    fprintf(stdout, "\tSum: %llu (%.2f%%)\n", sum_total, (f64)sum_total / (f64)total_cpu_elapsed * 100);
+
+    u64 output = end_freq - sum_freq;
+    fprintf(stdout, "\tMiscOutput: %llu (%.2f%%)\n", output, (f64)output / (f64)total_cpu_elapsed * 100);
 
     return 0;
 }
