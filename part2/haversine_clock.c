@@ -2,6 +2,7 @@
 #include "haversine.h"
 #endif
 
+#include <x86intrin.h>
 #include <sys/time.h>
 
 // returns number of microseconds in a second
@@ -18,11 +19,12 @@ u64 read_os_timer(void) {
 }
 
 // returns virtual counter value stored in cntvct_el0 register
-// (this is for ARM; in x64 would use rdtsc instead)
+// (this is for ARM; in x64 would use __rdtsc instead)
 u64 read_cpu_timer(void) {
-    u64 value;
-    asm volatile("mrs %0, cntvct_el0" : "=r"(value));
-    return value;
+//    u64 value;
+//    asm volatile("mrs %0, cntvct_el0" : "=r"(value));
+//    return value;
+    return __rdtsc();
 }
 
 // determine the number of CPU cycle counts per second by counting
