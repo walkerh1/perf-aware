@@ -96,8 +96,8 @@ int main(int argc, char *argv[]) {
     fprintf(coordinates, "]}");
 
     fprintf(stdout, "Method: %s\n", argv[1]);
-    fprintf(stdout, "Random seed: %llu\n", seed);
-    fprintf(stdout, "Pair count: %llu\n", pair_count);
+    fprintf(stdout, "Random seed: %lu\n", seed);
+    fprintf(stdout, "Pair count: %lu\n", pair_count);
     fprintf(stdout, "Expected sum: %.16f\n", sum / (f64)pair_count);
 
     fclose(coordinates);

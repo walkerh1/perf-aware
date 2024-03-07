@@ -425,7 +425,7 @@ int main(int argc, char *argv[]) {
 
     // report
     fprintf(stdout, "Input size: %zu bytes\n", input_json.count);
-    fprintf(stdout, "Pair count: %llu\n", n);
+    fprintf(stdout, "Pair count: %lu\n", n);
     fprintf(stdout, "Haversine average: %.16f\n", sum / (f64)n);
 
     // free allocated memory
