@@ -6,92 +6,81 @@
 #define MAX_ID 32
 
 typedef struct {
-    char id[MAX_ID];
-    u64 begin;
+    char const *label;
     u64 total;
-    u32 parent_idx;
     u64 total_children;
-    u64 times_called;
+    u64 times_hit;
 } Profile;
 
 typedef struct {
     Profile profiles[4096];
-    u32 count;
-    u64 global_begin;
-    u64 global_end;
+    u64 start;
+    u64 end;
 } GlobalProfiler;
 
-GlobalProfiler g_profiler;
-u32 g_profiler_parent = 0; // 0 means no parent/not in block
+GlobalProfiler profiler;
+
+typedef struct {
+    char const *label;
+    u64 start_timestamp;
+    u32 parent_idx;
+    u32 anchor_idx;
+} ProfileBlock;
+
+u32 global_parent_block = 0;
 
 #define NAME_CONCAT(a, b)          a##b
-#define NAME(a, b)                 NAME_CONCAT(a, b)
-#define BEGIN_TIME_BLOCK(string)   begin_block((string));
-#define END_TIME_BLOCK(string)     end_block((string));
+#define NAME(a, b)                 NAME_CONCAT(a,b)
+#define BEGIN_TIME_BLOCK(string)   u32 idx = __COUNTER__ + 1; \
+                                   ProfileBlock NAME(block,idx); \
+                                   start_block(&NAME(block,idx), string, idx);
+#define END_TIME_BLOCK(string)     end_block(&NAME(block,string));
 #define BEGIN_TIME_FUNCTION        BEGIN_TIME_BLOCK(__func__)
 #define END_TIME_FUNCTION          END_TIME_BLOCK(__func__)
 
-u32 find_profile(const char *string) {
-    for (int i = 1; i < g_profiler.count; i++) {
-        if (strcmp(string, g_profiler.profiles[i].id) == 0) {
-            return i;
-        }
-    }
-    return g_profiler.count;
+void start_block(ProfileBlock *block, char const *label, u32 idx) {
+    block->parent_idx = global_parent_block;
+    block->anchor_idx = idx;
+    block->label = label;
+    block->start_timestamp = read_cpu_timer();
+
+    profiler.profiles[idx].label = label;
+    global_parent_block = block->anchor_idx;
+}
+
+void end_block(ProfileBlock *block) {
+    u64 elapsed = read_cpu_timer() - block->start_timestamp;
+    global_parent_block = block->parent_idx;
+
+    Profile *parent = profiler.profiles + block->parent_idx;
+    Profile *profile = profiler.profiles + block->anchor_idx;
+
+    parent->total_children += elapsed;
+    profile->total += elapsed;
+    profile->times_hit++;
 }
 
 void begin_profiler(void) {
-    g_profiler.global_begin = read_cpu_timer();
-    g_profiler.count = 1; // reserve first position
+    profiler.start = read_cpu_timer();
 }
 
 void end_profiler(void) {
-    g_profiler.global_end = read_cpu_timer();
-}
-
-void begin_block(const char *id) {
-    u32 idx = find_profile(id);
-    Profile *profile = g_profiler.profiles + idx;
-    profile->begin = read_cpu_timer();
-    profile->total_children = 0;
-    if (idx == g_profiler.count) {
-        // first time this block is being called
-        strcpy(profile->id, id);
-        profile->total = 0;
-        profile->times_called = 0;
-        g_profiler.count++;
-    }
-    profile->times_called += 1;
-    profile->parent_idx = g_profiler_parent;
-    g_profiler_parent = idx;
-}
-
-void end_block(const char *id) {
-    u32 idx = find_profile(id);
-    Profile *profile = g_profiler.profiles + idx;
-    u64 end = read_cpu_timer();
-    u64 time = end - profile->begin;
-    profile->total += time;
-
-    Profile *parent = g_profiler.profiles + profile->parent_idx;
-    parent->total_children += time;
-
-    g_profiler_parent = profile->parent_idx;
+    profiler.end = read_cpu_timer();
 }
 
 void print_profile_results(void) {
-    u64 total_elapsed = g_profiler.global_end - g_profiler.global_begin;
+    u64 total_elapsed = profiler.end - profiler.start;
     u64 cpu_freq = estimate_cpu_timer_freq();
     fprintf(stdout, "\nTotal time: %.4fms (CPU freq %lu)\n", 1000.0 * (f64)total_elapsed / (f64)cpu_freq, cpu_freq);
 
     Profile *profile;
-    for (int i = 1; i < g_profiler.count; i++) {
-        profile = g_profiler.profiles + i;
+    for (int i = 1; i < len(profiler.profiles); i++) {
+        profile = profiler.profiles + i;
         u64 elapsed = profile->total - profile->total_children;
-        fprintf(stdout, "\t%s[%lu]: %lu (%.2f%%", profile->id, profile->times_called, elapsed, (f64)elapsed / (f64)total_elapsed * 100);
+        fprintf(stdout, "\t%s[%lu]: %lu (%.2f%%", profile->label, profile->times_hit, elapsed, (f64)elapsed / (f64)total_elapsed * 100);
         if (profile->total_children) {
             f64 percent_with_children = 100.0 * ((f64)profile->total / (f64)total_elapsed);
-            fprintf(stdout, ", w children: %.2f", percent_with_children);
+            fprintf(stdout, ", %.2f%% w children", percent_with_children);
         }
         fprintf(stdout, ")\n");
     }

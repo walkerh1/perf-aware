@@ -15,8 +15,10 @@
 #define X_MAX 180
 #define Y_MAX 90
 
-#define min(a, b) (a) <= (b) ? (a) : (b)
-#define max(a, b) (a) >= (b) ? (a) : (b)
+#define min(a, b) ((a) <= (b) ? (a) : (b))
+#define max(a, b) ((a) >= (b) ? (a) : (b))
+
+#define len(array) (sizeof(array) / sizeof(array[0]))
 
 typedef uint8_t u8;
 typedef int32_t i32;

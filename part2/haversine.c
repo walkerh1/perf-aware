@@ -279,6 +279,7 @@ JsonArray *parse_array() {
 }
 
 JsonElement *parse_json_element(Token *token) {
+    BEGIN_TIME_FUNCTION;
     JsonElement *res = (JsonElement *) malloc(sizeof(JsonElement));
 
     switch (token->type) {
@@ -305,6 +306,7 @@ JsonElement *parse_json_element(Token *token) {
             fprintf(stderr, "ERROR: malformed JSON\n");
             exit(1);
     }
+    END_TIME_FUNCTION;
 
     return res;
 }
@@ -319,10 +321,12 @@ JsonElement *parse_json(buffer input_json) {
 }
 
 JsonElement *lookup(JsonElement *dict, const char *key) {
+    BEGIN_TIME_FUNCTION;
     DictPair *curr = dict->dict->entries;
     while (strcmp(curr->key, key) != 0) {
         curr = curr->next;
     }
+    END_TIME_FUNCTION;
     return curr->value;
 }
 
@@ -341,7 +345,6 @@ u64 parse_haversine_pairs(buffer input_json, Pair *pairs, u64 max_count) {
         exit(1);
     }
 
-    BEGIN_TIME_BLOCK("lookup")
     u64 count = 0;
     for (ArrayElement *element = pairs_array->array->entries; element && count < max_count; element = element->next) {
         JsonElement *dict = element->value;
@@ -353,7 +356,6 @@ u64 parse_haversine_pairs(buffer input_json, Pair *pairs, u64 max_count) {
         pairs++;
         count++;
     }
-    END_TIME_BLOCK("lookup")
 
     END_TIME_FUNCTION;
 
@@ -368,7 +370,7 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    begin_profiler();
+     begin_profiler();
 
     // allocate all memory required for program
     char *filename = argv[1];
@@ -382,6 +384,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: unable to allocate %lu bytes\n", count);
         exit(1);
     }
+    printf("input_json mem allocation: %.4f\n", (f64)count / (f64)1000000000); 
     buffer haversine_pairs = {};
     input_json.count = count-1;
     u64 max_pair_count = input_json.count / MIN_JSON_PAIR_SIZE; // just estimate size based on input_json size)
@@ -393,6 +396,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: unable to allocate %lu bytes\n", haversine_pairs.count);
         exit(1);
     }
+    printf("input_json mem allocation: %.4f\n", (f64)count / (f64)1000000000); 
     haversine_pairs.count = max_pair_count * sizeof(Pair);
     END_TIME_BLOCK("allocating")
 
