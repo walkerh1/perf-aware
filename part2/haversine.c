@@ -310,13 +310,11 @@ JsonElement *parse_json_element(Token *token) {
 }
 
 JsonElement *parse_json(buffer input_json) {
-    BEGIN_TIME_FUNCTION;
     curr_byte = (char *)input_json.data;
 
     Token token = next_token();
     JsonElement *top_element = parse_json_element(&token);
 
-    END_TIME_FUNCTION;
     return top_element;
 }
 
@@ -334,6 +332,7 @@ f64 unwrap_number(JsonElement *number) {
 }
 
 u64 parse_haversine_pairs(buffer input_json, Pair *pairs, u64 max_count) {
+    BEGIN_TIME_FUNCTION;
     JsonElement *parsed_json = parse_json(input_json);
     JsonElement *pairs_array = lookup(parsed_json, "pairs");
 
@@ -355,6 +354,8 @@ u64 parse_haversine_pairs(buffer input_json, Pair *pairs, u64 max_count) {
         count++;
     }
     END_TIME_BLOCK("lookup")
+
+    END_TIME_FUNCTION;
 
     return count;
 }
