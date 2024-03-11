@@ -306,8 +306,8 @@ JsonElement *parse_json_element(Token *token) {
             fprintf(stderr, "ERROR: malformed JSON\n");
             exit(1);
     }
-    END_TIME_FUNCTION;
 
+    END_TIME_FUNCTION;
     return res;
 }
 

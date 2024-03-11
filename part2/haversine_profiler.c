@@ -10,6 +10,7 @@ typedef struct {
     u64 total;
     u64 total_children;
     u64 times_hit;
+    u32 nested_cnt;
 } Profile;
 
 typedef struct {
@@ -34,21 +35,43 @@ u32 sp = 1;
 #define NAME_CONCAT(a, b)          a##b
 #define NAME(a, b)                 NAME_CONCAT(a,b)
 #define BEGIN_TIME_BLOCK(string)   start_block(string, __COUNTER__ + 1);
-#define END_TIME_BLOCK(string)     end_block();
+#define END_TIME_BLOCK(string)     end_block(string);
 #define BEGIN_TIME_FUNCTION        BEGIN_TIME_BLOCK(__func__)
 #define END_TIME_FUNCTION          END_TIME_BLOCK(__func__)
 
 void start_block(char const *label, u32 idx) {
+    Profile *anchor = profiler.profiles + idx;
+    anchor->nested_cnt += 1;
+    if (anchor->nested_cnt > 1) {
+        return;
+    }
     ProfileBlock *block = stack + sp;
     block->parent_idx = stack[sp-1].anchor_idx;
     block->anchor_idx = idx;
     block->label = label;
     block->start_timestamp = read_cpu_timer();
-    profiler.profiles[idx].label = label;
+    anchor->label = label;
     sp++;
 }
 
-void end_block() {
+Profile *find_anchor(char const *label) {
+    Profile *anchor;
+    for (int i = 1; i < len(profiler.profiles); i++) {
+        anchor = profiler.profiles + i;
+        if (anchor->label != NULL && strcmp(anchor->label, label) == 0) {
+            return anchor;
+        }
+    }
+    fprintf(stderr, "ERROR: called find_anchor with invalid label\n");
+    exit(1);
+}
+
+void end_block(char const *label) {
+    Profile *anchor = find_anchor(label);
+    anchor->nested_cnt -= 1;
+    if (anchor->nested_cnt > 0) {
+        return;
+    }
     sp--;
     ProfileBlock *block = stack + sp;
     u64 elapsed = read_cpu_timer() - block->start_timestamp;
@@ -58,9 +81,8 @@ void end_block() {
         parent->total_children += elapsed;
     }
 
-    Profile *profile = profiler.profiles + block->anchor_idx;
-    profile->total += elapsed;
-    profile->times_hit++;
+    anchor->total += elapsed;
+    anchor->times_hit++;
 }
 
 void begin_profiler(void) {
