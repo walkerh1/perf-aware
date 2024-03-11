@@ -384,7 +384,6 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: unable to allocate %lu bytes\n", count);
         exit(1);
     }
-    printf("input_json mem allocation: %.4f\n", (f64)count / (f64)1000000000); 
     buffer haversine_pairs = {};
     input_json.count = count-1;
     u64 max_pair_count = input_json.count / MIN_JSON_PAIR_SIZE; // just estimate size based on input_json size)
@@ -396,7 +395,6 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: unable to allocate %lu bytes\n", haversine_pairs.count);
         exit(1);
     }
-    printf("input_json mem allocation: %.4f\n", (f64)count / (f64)1000000000); 
     haversine_pairs.count = max_pair_count * sizeof(Pair);
     END_TIME_BLOCK("allocating")
 

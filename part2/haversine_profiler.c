@@ -27,35 +27,38 @@ typedef struct {
     u32 anchor_idx;
 } ProfileBlock;
 
-u32 global_parent_block = 0;
+// This means there cannot be blocks that overlap like [ { ] }
+ProfileBlock stack[1024];
+u32 sp = 1;
 
 #define NAME_CONCAT(a, b)          a##b
 #define NAME(a, b)                 NAME_CONCAT(a,b)
-#define BEGIN_TIME_BLOCK(string)   u32 idx = __COUNTER__ + 1; \
-                                   ProfileBlock NAME(block,idx); \
-                                   start_block(&NAME(block,idx), string, idx);
-#define END_TIME_BLOCK(string)     end_block(&NAME(block,string));
+#define BEGIN_TIME_BLOCK(string)   start_block(string, __COUNTER__ + 1);
+#define END_TIME_BLOCK(string)     end_block();
 #define BEGIN_TIME_FUNCTION        BEGIN_TIME_BLOCK(__func__)
 #define END_TIME_FUNCTION          END_TIME_BLOCK(__func__)
 
-void start_block(ProfileBlock *block, char const *label, u32 idx) {
-    block->parent_idx = global_parent_block;
+void start_block(char const *label, u32 idx) {
+    ProfileBlock *block = stack + sp;
+    block->parent_idx = stack[sp-1].anchor_idx;
     block->anchor_idx = idx;
     block->label = label;
     block->start_timestamp = read_cpu_timer();
-
     profiler.profiles[idx].label = label;
-    global_parent_block = block->anchor_idx;
+    sp++;
 }
 
-void end_block(ProfileBlock *block) {
+void end_block() {
+    sp--;
+    ProfileBlock *block = stack + sp;
     u64 elapsed = read_cpu_timer() - block->start_timestamp;
-    global_parent_block = block->parent_idx;
 
-    Profile *parent = profiler.profiles + block->parent_idx;
+    if (block->parent_idx) {
+        Profile *parent = profiler.profiles + block->parent_idx;
+        parent->total_children += elapsed;
+    }
+
     Profile *profile = profiler.profiles + block->anchor_idx;
-
-    parent->total_children += elapsed;
     profile->total += elapsed;
     profile->times_hit++;
 }
@@ -76,6 +79,7 @@ void print_profile_results(void) {
     Profile *profile;
     for (int i = 1; i < len(profiler.profiles); i++) {
         profile = profiler.profiles + i;
+        if (profile->label == NULL) break;
         u64 elapsed = profile->total - profile->total_children;
         fprintf(stdout, "\t%s[%lu]: %lu (%.2f%%", profile->label, profile->times_hit, elapsed, (f64)elapsed / (f64)total_elapsed * 100);
         if (profile->total_children) {
