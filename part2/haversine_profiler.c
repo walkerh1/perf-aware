@@ -41,6 +41,7 @@ u32 sp = 1;
 
 void start_block(char const *label, u32 idx) {
     Profile *anchor = profiler.profiles + idx;
+    anchor->times_hit++;
     anchor->nested_cnt += 1;
     if (anchor->nested_cnt > 1) {
         return;
@@ -82,7 +83,6 @@ void end_block(char const *label) {
     }
 
     anchor->total += elapsed;
-    anchor->times_hit++;
 }
 
 void begin_profiler(void) {
@@ -101,7 +101,7 @@ void print_profile_results(void) {
     Profile *profile;
     for (int i = 1; i < len(profiler.profiles); i++) {
         profile = profiler.profiles + i;
-        if (profile->label == NULL) break;
+        if (profile->label == NULL) continue;
         u64 elapsed = profile->total - profile->total_children;
         fprintf(stdout, "\t%s[%lu]: %lu (%.2f%%", profile->label, profile->times_hit, elapsed, (f64)elapsed / (f64)total_elapsed * 100);
         if (profile->total_children) {
