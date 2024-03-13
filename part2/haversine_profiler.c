@@ -7,9 +7,8 @@
 
 typedef struct {
     char const *label;
-    u64 tsc_elapsed;
-    u64 tsc_elapsed_children;
-    u64 tsc_elapsed_at_root;
+    u64 tsc_elapsed_exclusive; // does NOT include children
+    u64 tsc_elapsed_inclusive; // DOES include children
     u64 hit_count;
 } Profile;
 
@@ -23,7 +22,7 @@ GlobalProfiler profiler;
 
 typedef struct {
     char const *label;
-    u64 old_tsc_elapsed_at_root;
+    u64 old_tsc_elapsed_inclusive;
     u64 start_tsc;
     u32 anchor_idx;
 } ProfileBlock;
@@ -45,7 +44,7 @@ void start_block(char const *label, u32 idx) {
 
     ProfileBlock *block = stack + sp;
     block->label = label;
-    block->old_tsc_elapsed_at_root = anchor->tsc_elapsed_at_root;
+    block->old_tsc_elapsed_inclusive = anchor->tsc_elapsed_inclusive;
     block->start_tsc = read_cpu_timer();
     block->anchor_idx = idx;
     sp++;
@@ -59,12 +58,12 @@ void end_block(char const *label) {
     if (sp > 1) {
         ProfileBlock *parent_block = stack + (sp-1);
         Profile *parent_anchor = profiler.profiles + parent_block->anchor_idx;
-        parent_anchor->tsc_elapsed_children += elapsed;
+        parent_anchor->tsc_elapsed_exclusive -= elapsed;
     }
 
     Profile *anchor = profiler.profiles + block->anchor_idx;
-    anchor->tsc_elapsed_at_root = block->old_tsc_elapsed_at_root + elapsed;
-    anchor->tsc_elapsed += elapsed;
+    anchor->tsc_elapsed_exclusive += elapsed;
+    anchor->tsc_elapsed_inclusive = block->old_tsc_elapsed_inclusive + elapsed;
     anchor->hit_count += 1;
 }
 
@@ -77,11 +76,10 @@ void end_profiler(void) {
 }
 
 void print_time_elapsed(u64 total_tsc_elapsed, Profile *anchor) {
-    u64 tsc_elapsed = anchor->tsc_elapsed - anchor->tsc_elapsed_children;
-    f64 percent = 100.0 * ((f64)tsc_elapsed / (f64)total_tsc_elapsed);
-    printf(" %s[%lu]: %lu (%.2f%%", anchor->label, anchor->hit_count, tsc_elapsed, percent);
-    if (anchor->tsc_elapsed_at_root != tsc_elapsed) {
-        f64 percent_with_children = 100.0 * ((f64)anchor->tsc_elapsed_at_root / (f64)total_tsc_elapsed);
+    f64 percent = 100.0 * ((f64)anchor->tsc_elapsed_exclusive / (f64)total_tsc_elapsed);
+    printf(" %s[%lu]: %lu (%.2f%%", anchor->label, anchor->hit_count, anchor->tsc_elapsed_exclusive, percent);
+    if (anchor->tsc_elapsed_inclusive != anchor->tsc_elapsed_exclusive) {
+        f64 percent_with_children = 100.0 * ((f64)anchor->tsc_elapsed_inclusive / (f64)total_tsc_elapsed);
         printf(", %.2f%% with children", percent_with_children);
     }
     printf(")\n");
@@ -91,10 +89,9 @@ void print_profile_results(void) {
     u64 total_elapsed = profiler.end - profiler.start;
     u64 cpu_freq = estimate_cpu_timer_freq();
     fprintf(stdout, "\nTotal time: %.4fms (CPU freq %lu)\n", 1000.0 * (f64)total_elapsed / (f64)cpu_freq, cpu_freq);
-
     for (u32 i = 1; i < len(profiler.profiles); i++) {
         Profile *anchor = profiler.profiles + i;
-        if (anchor->tsc_elapsed) {
+        if (anchor->tsc_elapsed_inclusive) {
             print_time_elapsed(total_elapsed, anchor);
         }
     }
