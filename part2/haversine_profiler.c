@@ -7,10 +7,10 @@
 
 typedef struct {
     char const *label;
-    u64 total;
-    u64 total_children;
-    u64 times_hit;
-    u32 nested_cnt;
+    u64 tsc_elapsed;
+    u64 tsc_elapsed_children;
+    u64 tsc_elapsed_at_root;
+    u64 hit_count;
 } Profile;
 
 typedef struct {
@@ -23,8 +23,8 @@ GlobalProfiler profiler;
 
 typedef struct {
     char const *label;
-    u64 start_timestamp;
-    u32 parent_idx;
+    u64 old_tsc_elapsed_at_root;
+    u64 start_tsc;
     u32 anchor_idx;
 } ProfileBlock;
 
@@ -41,48 +41,31 @@ u32 sp = 1;
 
 void start_block(char const *label, u32 idx) {
     Profile *anchor = profiler.profiles + idx;
-    anchor->times_hit++;
-    anchor->nested_cnt += 1;
-    if (anchor->nested_cnt > 1) {
-        return;
-    }
+    anchor->label = label; // unfortunately no easy way to write this once
+
     ProfileBlock *block = stack + sp;
-    block->parent_idx = stack[sp-1].anchor_idx;
-    block->anchor_idx = idx;
     block->label = label;
-    block->start_timestamp = read_cpu_timer();
-    anchor->label = label;
+    block->old_tsc_elapsed_at_root = anchor->tsc_elapsed_at_root;
+    block->start_tsc = read_cpu_timer();
+    block->anchor_idx = idx;
     sp++;
 }
 
-Profile *find_anchor(char const *label) {
-    Profile *anchor;
-    for (int i = 1; i < len(profiler.profiles); i++) {
-        anchor = profiler.profiles + i;
-        if (anchor->label != NULL && strcmp(anchor->label, label) == 0) {
-            return anchor;
-        }
-    }
-    fprintf(stderr, "ERROR: called find_anchor with invalid label\n");
-    exit(1);
-}
-
 void end_block(char const *label) {
-    Profile *anchor = find_anchor(label);
-    anchor->nested_cnt -= 1;
-    if (anchor->nested_cnt > 0) {
-        return;
-    }
     sp--;
     ProfileBlock *block = stack + sp;
-    u64 elapsed = read_cpu_timer() - block->start_timestamp;
+    u64 elapsed = read_cpu_timer() - block->start_tsc;
 
-    if (block->parent_idx) {
-        Profile *parent = profiler.profiles + block->parent_idx;
-        parent->total_children += elapsed;
+    if (sp > 1) {
+        ProfileBlock *parent_block = stack + (sp-1);
+        Profile *parent_anchor = profiler.profiles + parent_block->anchor_idx;
+        parent_anchor->tsc_elapsed_children += elapsed;
     }
 
-    anchor->total += elapsed;
+    Profile *anchor = profiler.profiles + block->anchor_idx;
+    anchor->tsc_elapsed_at_root = block->old_tsc_elapsed_at_root + elapsed;
+    anchor->tsc_elapsed += elapsed;
+    anchor->hit_count += 1;
 }
 
 void begin_profiler(void) {
@@ -93,22 +76,27 @@ void end_profiler(void) {
     profiler.end = read_cpu_timer();
 }
 
+void print_time_elapsed(u64 total_tsc_elapsed, Profile *anchor) {
+    u64 tsc_elapsed = anchor->tsc_elapsed - anchor->tsc_elapsed_children;
+    f64 percent = 100.0 * ((f64)tsc_elapsed / (f64)total_tsc_elapsed);
+    printf(" %s[%lu]: %lu (%.2f%%", anchor->label, anchor->hit_count, tsc_elapsed, percent);
+    if (anchor->tsc_elapsed_at_root != tsc_elapsed) {
+        f64 percent_with_children = 100.0 * ((f64)anchor->tsc_elapsed_at_root / (f64)total_tsc_elapsed);
+        printf(", %.2f%% with children", percent_with_children);
+    }
+    printf(")\n");
+}
+
 void print_profile_results(void) {
     u64 total_elapsed = profiler.end - profiler.start;
     u64 cpu_freq = estimate_cpu_timer_freq();
     fprintf(stdout, "\nTotal time: %.4fms (CPU freq %lu)\n", 1000.0 * (f64)total_elapsed / (f64)cpu_freq, cpu_freq);
 
-    Profile *profile;
-    for (int i = 1; i < len(profiler.profiles); i++) {
-        profile = profiler.profiles + i;
-        if (profile->label == NULL) continue;
-        u64 elapsed = profile->total - profile->total_children;
-        fprintf(stdout, "\t%s[%lu]: %lu (%.2f%%", profile->label, profile->times_hit, elapsed, (f64)elapsed / (f64)total_elapsed * 100);
-        if (profile->total_children) {
-            f64 percent_with_children = 100.0 * ((f64)profile->total / (f64)total_elapsed);
-            fprintf(stdout, ", %.2f%% w children", percent_with_children);
+    for (u32 i = 1; i < len(profiler.profiles); i++) {
+        Profile *anchor = profiler.profiles + i;
+        if (anchor->tsc_elapsed) {
+            print_time_elapsed(total_elapsed, anchor);
         }
-        fprintf(stdout, ")\n");
     }
 }
 
