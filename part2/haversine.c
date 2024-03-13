@@ -1,11 +1,14 @@
 #include "haversine.h"
 #include "haversine_formula.c"
 #include "haversine_clock.c"
-#include "haversine_profiler.c"
 
 #define MAX_IDENT 64            // max allowed length for an identifier in JSON
 #define MAX_JSON_DIGITS 32      // max allowed digits in a given JSON number
 #define MIN_JSON_PAIR_SIZE 24   // min 6 bytes (e.g. '"x0":0') * 4 coordinates == 24 bytes min
+
+// toggle for profiler
+#define PROFILER 1
+#include "haversine_profiler.c"
 
 // ====================================== Token Types ===================================== //
 
@@ -435,8 +438,7 @@ int main(int argc, char *argv[]) {
     free(haversine_pairs.data);
     free(input_json.data);
 
-    end_profiler();
-    print_profile_results();
+    end_and_print_profiler();
 
     return 0;
 }
