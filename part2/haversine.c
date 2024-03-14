@@ -323,13 +323,42 @@ JsonElement *parse_json(buffer input_json) {
     return top_element;
 }
 
+void free_json(JsonElement *json) {
+    switch (json->type) {
+        case ELEM_DICT: {
+            DictPair *curr = json->dict->entries;
+            DictPair *prev = NULL;
+            while (curr != NULL) {
+                prev = curr;
+                curr = curr->next;
+                free_json(prev->value);
+                free(prev);
+            }
+            free(json->dict);
+            break;
+        }
+        case ELEM_ARRAY: {
+            ArrayElement *curr = json->array->entries;
+            ArrayElement *prev = NULL;
+            while (curr != NULL) {
+                prev = curr;
+                curr = curr->next;
+                free_json(prev->value);
+                free(prev);
+            }
+            free(json->array);
+            break;
+        }
+        default: {}
+    }
+    free(json);
+}
+
 JsonElement *lookup(JsonElement *dict, const char *key) {
-    BEGIN_TIME_FUNCTION;
     DictPair *curr = dict->dict->entries;
     while (strcmp(curr->key, key) != 0) {
         curr = curr->next;
     }
-    END_TIME_FUNCTION;
     return curr->value;
 }
 
@@ -348,6 +377,7 @@ u64 parse_haversine_pairs(buffer input_json, Pair *pairs, u64 max_count) {
         exit(1);
     }
 
+    BEGIN_TIME_BLOCK("populate pairs_array");
     u64 count = 0;
     for (ArrayElement *element = pairs_array->array->entries; element && count < max_count; element = element->next) {
         JsonElement *dict = element->value;
@@ -359,6 +389,12 @@ u64 parse_haversine_pairs(buffer input_json, Pair *pairs, u64 max_count) {
         pairs++;
         count++;
     }
+    END_TIME_BLOCK("populate pairs_array");
+
+    BEGIN_TIME_BLOCK("free");
+    free_json(parsed_json);
+    END_TIME_BLOCK("free");
+
 
     END_TIME_FUNCTION;
 
@@ -435,8 +471,8 @@ int main(int argc, char *argv[]) {
     fprintf(stdout, "Haversine average: %.16f\n", sum / (f64)n);
 
     // free allocated memory
-    free(haversine_pairs.data);
-    free(input_json.data);
+    // free(haversine_pairs.data);
+    // free(input_json.data);
 
     end_and_print_profiler();
 
