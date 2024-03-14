@@ -15,7 +15,7 @@
 typedef struct {
     size_t count;
     u8 *data;
-} buffer;
+} Buffer;
 
 typedef enum {
     TOKEN_NONE,
@@ -36,7 +36,7 @@ typedef struct {
     TokenType type;
     union {
         f64 number;
-        char identifier[MAX_IDENT];
+        Buffer identifier;
     };
 } Token;
 
@@ -58,7 +58,7 @@ typedef struct DictPair DictPair;
 typedef struct ArrayElement ArrayElement;
 
 struct DictPair {
-    char key[MAX_IDENT];
+    Buffer key;
     JsonElement *value;
     DictPair *next;
 };
@@ -81,7 +81,7 @@ struct JsonElement {
     union {
         JsonDict *dict;
         JsonArray *array;
-        char *identifier;
+        Buffer identifier;
         f64 number;
     };
 };
@@ -98,15 +98,16 @@ char *curr_byte;    // pointer to current byte in json input
 void set_identifier(Token *token) {
     // PRE: assume curr_byte is '"' when this function is called; if
     // it isn't, that is a bug in the calling code not this function.
+    Buffer identifier;
     curr_byte++;
     u32 i = 0;
+    identifier.data = (u8*)curr_byte;
     while (*curr_byte != '"') {
-        token->identifier[i] = *curr_byte;
         i++;
         curr_byte++;
     }
-
-    token->identifier[i] = '\0'; // close off identifier with null byte
+    identifier.count = i;
+    token->identifier = identifier;
 
     if (i == 0) {
         fprintf(stderr, "PARSING ERROR: cannot have empty identifier in JSON\n");
@@ -222,7 +223,7 @@ JsonDict *parse_dictionary() {
             fprintf(stderr, "PARSING ERROR: expected identifier for dictionary key (%u)\n", token.type);
             exit(1);
         }
-        strcpy(entry->key, token.identifier);
+        entry->key = token.identifier;
 
         token = next_token();
         if (token.type != TOKEN_COLON) {
@@ -282,7 +283,6 @@ JsonArray *parse_array() {
 }
 
 JsonElement *parse_json_element(Token *token) {
-    BEGIN_TIME_FUNCTION;
     JsonElement *res = (JsonElement *) malloc(sizeof(JsonElement));
 
     switch (token->type) {
@@ -310,11 +310,10 @@ JsonElement *parse_json_element(Token *token) {
             exit(1);
     }
 
-    END_TIME_FUNCTION;
     return res;
 }
 
-JsonElement *parse_json(buffer input_json) {
+JsonElement *parse_json(Buffer input_json) {
     curr_byte = (char *)input_json.data;
 
     Token token = next_token();
@@ -354,9 +353,24 @@ void free_json(JsonElement *json) {
     free(json);
 }
 
-JsonElement *lookup(JsonElement *dict, const char *key) {
+bool are_equal(Buffer s1, Buffer s2) {
+    bool res = true;
+    if (s1.count != s2.count) {
+        res = false;
+    } else {
+        for (u32 i = 0; i < s1.count; i++) {
+            if (s1.data[i] != s2.data[i]) {
+                res = false;
+                break;
+            }
+        }
+    }
+    return res;
+}
+
+JsonElement *lookup(JsonElement *dict, Buffer key) {
     DictPair *curr = dict->dict->entries;
-    while (strcmp(curr->key, key) != 0) {
+    while (!are_equal(curr->key, key)) {
         curr = curr->next;
     }
     return curr->value;
@@ -367,10 +381,14 @@ f64 unwrap_number(JsonElement *number) {
     return number->number;
 }
 
-u64 parse_haversine_pairs(buffer input_json, Pair *pairs, u64 max_count) {
+u64 parse_haversine_pairs(Buffer input_json, Pair *pairs, u64 max_count) {
     BEGIN_TIME_FUNCTION;
+    Buffer pairs_key = { 5, (u8*)("pairs") };
+    BEGIN_TIME_BLOCK("parse json");
     JsonElement *parsed_json = parse_json(input_json);
-    JsonElement *pairs_array = lookup(parsed_json, "pairs");
+    END_TIME_BLOCK("parse json");
+
+    JsonElement *pairs_array = lookup(parsed_json, pairs_key);
 
     if (pairs_array->type != ELEM_ARRAY) {
         fprintf(stderr, "LOOKUP ERROR: expected an array\n");
@@ -378,14 +396,18 @@ u64 parse_haversine_pairs(buffer input_json, Pair *pairs, u64 max_count) {
     }
 
     BEGIN_TIME_BLOCK("populate pairs_array");
+    Buffer x0 = { 2, (u8*)("x0") };
+    Buffer y0 = { 2, (u8*)("y0") };
+    Buffer x1 = { 2, (u8*)("x1") };
+    Buffer y1 = { 2, (u8*)("y1") };
     u64 count = 0;
     for (ArrayElement *element = pairs_array->array->entries; element && count < max_count; element = element->next) {
         JsonElement *dict = element->value;
         assert(dict->type == ELEM_DICT);
-        pairs->x0 = unwrap_number(lookup(dict, "x0"));
-        pairs->y0 = unwrap_number(lookup(dict, "y0"));
-        pairs->x1 = unwrap_number(lookup(dict, "x1"));
-        pairs->y1 = unwrap_number(lookup(dict, "y1"));
+        pairs->x0 = unwrap_number(lookup(dict, x0));
+        pairs->y0 = unwrap_number(lookup(dict, y0));
+        pairs->x1 = unwrap_number(lookup(dict, x1));
+        pairs->y1 = unwrap_number(lookup(dict, y1));
         pairs++;
         count++;
     }
@@ -394,7 +416,6 @@ u64 parse_haversine_pairs(buffer input_json, Pair *pairs, u64 max_count) {
     BEGIN_TIME_BLOCK("free");
     free_json(parsed_json);
     END_TIME_BLOCK("free");
-
 
     END_TIME_FUNCTION;
 
@@ -413,7 +434,7 @@ int main(int argc, char *argv[]) {
 
     // allocate all memory required for program
     char *filename = argv[1];
-    buffer input_json = {};
+    Buffer input_json = {};
 
     BEGIN_TIME_BLOCK("allocating")
     struct stat file_stat;
@@ -423,7 +444,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: unable to allocate %lu bytes\n", count);
         exit(1);
     }
-    buffer haversine_pairs = {};
+    Buffer haversine_pairs = {};
     input_json.count = count-1;
     u64 max_pair_count = input_json.count / MIN_JSON_PAIR_SIZE; // just estimate size based on input_json size)
     if (max_pair_count == 0) {
@@ -469,10 +490,6 @@ int main(int argc, char *argv[]) {
     fprintf(stdout, "Input size: %zu bytes\n", input_json.count);
     fprintf(stdout, "Pair count: %lu\n", n);
     fprintf(stdout, "Haversine average: %.16f\n", sum / (f64)n);
-
-    // free allocated memory
-    // free(haversine_pairs.data);
-    // free(input_json.data);
 
     end_and_print_profiler();
 
