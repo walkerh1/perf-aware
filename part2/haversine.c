@@ -459,7 +459,7 @@ int main(int argc, char *argv[]) {
     END_TIME_BLOCK("allocating")
 
     // open and read json file into memory
-    BEGIN_TIME_BLOCK("reading")
+    BEGIN_BANDWIDTH_BLOCK("reading", input_json.count)
     FILE *file;
     if ((file = fopen(filename, "rb")) == NULL) {
         fprintf(stderr, "ERROR: unable to open \"%s\"\n", filename);
@@ -479,7 +479,7 @@ int main(int argc, char *argv[]) {
     u64 n = parse_haversine_pairs(input_json, pairs, max_pair_count);
 
     // sum haversine distances
-    BEGIN_TIME_BLOCK("sum")
+    BEGIN_BANDWIDTH_BLOCK("sum", 32 * n)
     f64 sum = 0;
     for (int i = 0; i < n; i++) {
         sum += haversine(pairs[i].x0, pairs[i].y0, pairs[i].x1, pairs[i].y1, EARTH_RADIUS);
