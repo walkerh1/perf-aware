@@ -2,184 +2,184 @@
 #include "clock.c"
 
 typedef enum {
-    TestMode_Uninitialized,
-    TestMode_Testing,
-    TestMode_Completed,
-    TestMode_Error,
-} test_mode;
+    TestModeUninitialized,
+    TestModeTesting,
+    TestModeCompleted,
+    TestModeError,
+} TestMode;
 
 typedef struct {
-    u64 TestCount;
-    u64 TotalTime;
-    u64 MaxTime;
-    u64 MinTime;
-} repetition_test_results;
+    u64 test_count;
+    u64 total_time;
+    u64 max_time;
+    u64 min_time;
+} RepetitionTestResults;
 
 typedef struct {
-    u64 TargetProcessedByteCount;
-    u64 CPUTimerFreq;
-    u64 TryForTime;
-    u64 TestsStartedAt;
+    u64 target_processed_byte_count;
+    u64 cpu_timer_freq;
+    u64 try_for_time;
+    u64 tests_started_at;
     
-    test_mode Mode;
-    bool PrintNewMinimums;
-    u32 OpenBlockCount;
-    u32 CloseBlockCount;
-    u64 TimeAccumulatedOnThisTest;
-    u64 BytesAccumulatedOnThisTest;
+    TestMode mode;
+    bool print_new_minimums;
+    u32 open_block_count;
+    u32 close_block_count;
+    u64 time_accumulated_on_this_test;
+    u64 bytes_accumulated_on_this_test;
 
-    repetition_test_results Results;
-} repetition_tester;
+    RepetitionTestResults results;
+} RepetitionTester;
 
-static f64 SecondsFromCPUTime(f64 CPUTime, u64 CPUTimerFreq) {
-    f64 Result = 0.0;
-    if(CPUTimerFreq) {
-        Result = (CPUTime / (f64)CPUTimerFreq);
+static f64 seconds_from_cpu_time(f64 cpu_time, u64 cpu_timer_freq) {
+    f64 result = 0.0;
+    if(cpu_timer_freq) {
+        result = (cpu_time / (f64)cpu_timer_freq);
     }
     
-    return Result;
+    return result;
 }
  
-static void PrintTime(char const *Label, f64 CPUTime, u64 CPUTimerFreq, u64 ByteCount)
+static void print_time(char const *label, f64 cpu_time, u64 cpu_timer_freq, u64 byte_count)
 {
-    printf("%s: %.0f", Label, CPUTime);
-    if(CPUTimerFreq) {
-        f64 Seconds = SecondsFromCPUTime(CPUTime, CPUTimerFreq);
-        printf(" (%fms)", 1000.0f*Seconds);
+    printf("%s: %.0f", label, cpu_time);
+    if(cpu_timer_freq) {
+        f64 seconds = seconds_from_cpu_time(cpu_time, cpu_timer_freq);
+        printf(" (%fms)", 1000.0f*seconds);
     
-        if(ByteCount) {
-            f64 Gigabyte = (1024.0f * 1024.0f * 1024.0f);
-            f64 BestBandwidth = ByteCount / (Gigabyte * Seconds);
-            printf(" %fgb/s", BestBandwidth);
+        if(byte_count) {
+            f64 gigabyte = (1024.0f * 1024.0f * 1024.0f);
+            f64 best_bandwidth = byte_count / (gigabyte * seconds);
+            printf(" %fgb/s", best_bandwidth);
         }
     }
 }
 
-static void PrintResults(repetition_test_results Results, u64 CPUTimerFreq, u64 ByteCount)
+static void print_results(RepetitionTestResults results, u64 cpu_timer_freq, u64 byte_count)
 {
-    PrintTime("Min", (f64)Results.MinTime, CPUTimerFreq, ByteCount);
+    print_time("Min", (f64)results.min_time, cpu_timer_freq, byte_count);
     printf("\n");
     
-    PrintTime("Max", (f64)Results.MaxTime, CPUTimerFreq, ByteCount);
+    print_time("Max", (f64)results.max_time, cpu_timer_freq, byte_count);
     printf("\n");
     
-    if(Results.TestCount) {
-        PrintTime("Avg", (f64)Results.TotalTime / (f64)Results.TestCount, CPUTimerFreq, ByteCount);
+    if(results.test_count) {
+        print_time("Avg", (f64)results.total_time / (f64)results.test_count, cpu_timer_freq, byte_count);
         printf("\n");
     }
 }
 
-static void Error(repetition_tester *Tester, char const *Message)
+static void error(RepetitionTester *tester, char const *message)
 {
-    Tester->Mode = TestMode_Error;
-    fprintf(stderr, "ERROR: %s\n", Message);
+    tester->mode = TestModeError;
+    fprintf(stderr, "ERROR: %s\n", message);
 }
 
-static void NewTestWave(repetition_tester *Tester, u64 TargetProcessedByteCount, u64 CPUTimerFreq)
+static void new_test_wave(RepetitionTester *tester, u64 target_processed_byte_count, u64 cpu_timer_freq)
 {
-    if(Tester->Mode == TestMode_Uninitialized)
+    if(tester->mode == TestModeUninitialized)
     {
-        Tester->Mode = TestMode_Testing;
-        Tester->TargetProcessedByteCount = TargetProcessedByteCount;
-        Tester->CPUTimerFreq = CPUTimerFreq;
-        Tester->PrintNewMinimums = true;
-        Tester->Results.MinTime = (u64)-1;
+        tester->mode = TestModeTesting;
+        tester->target_processed_byte_count = target_processed_byte_count;
+        tester->cpu_timer_freq = cpu_timer_freq;
+        tester->print_new_minimums = true;
+        tester->results.min_time = (u64)-1;
     }
-    else if(Tester->Mode == TestMode_Completed)
+    else if(tester->mode == TestModeCompleted)
     {
-        Tester->Mode = TestMode_Testing;
+        tester->mode = TestModeTesting;
         
-        if(Tester->TargetProcessedByteCount != TargetProcessedByteCount)
+        if(tester->target_processed_byte_count != target_processed_byte_count)
         {
-            Error(Tester, "TargetProcessedByteCount changed");
+            error(tester, "TargetProcessedbyte_count changed");
         }
         
-        if(Tester->CPUTimerFreq != CPUTimerFreq)
+        if(tester->cpu_timer_freq != cpu_timer_freq)
         {
-            Error(Tester, "CPU frequency changed");
+            error(tester, "CPU frequency changed");
         }
     }
 
-    Tester->TryForTime = 10 * CPUTimerFreq;
-    Tester->TestsStartedAt = read_cpu_timer();
+    tester->try_for_time = 10 * cpu_timer_freq;
+    tester->tests_started_at = read_cpu_timer();
 }
 
-static void BeginTime(repetition_tester *Tester)
+static void begin_time(RepetitionTester *tester)
 {
-    ++Tester->OpenBlockCount;
-    Tester->TimeAccumulatedOnThisTest -= read_cpu_timer();
+    ++tester->open_block_count;
+    tester->time_accumulated_on_this_test -= read_cpu_timer();
 }
 
-static void EndTime(repetition_tester *Tester)
+static void end_time(RepetitionTester *tester)
 {
-    ++Tester->CloseBlockCount;
-    Tester->TimeAccumulatedOnThisTest += read_cpu_timer();
+    ++tester->close_block_count;
+    tester->time_accumulated_on_this_test += read_cpu_timer();
 }
 
-static void CountBytes(repetition_tester *Tester, u64 ByteCount)
+static void count_bytes(RepetitionTester *tester, u64 byte_count)
 {
-    Tester->BytesAccumulatedOnThisTest += ByteCount;
+    tester->bytes_accumulated_on_this_test += byte_count;
 }
 
-static bool IsTesting(repetition_tester *Tester)
+static bool is_testing(RepetitionTester *tester)
 {
-    if(Tester->Mode == TestMode_Testing)
+    if(tester->mode == TestModeTesting)
     {
-        u64 CurrentTime = read_cpu_timer();
+        u64 current_time = read_cpu_timer();
         
-        if(Tester->OpenBlockCount) // NOTE(casey): We don't count tests that had no timing blocks - we assume they took some other path
+        if(tester->open_block_count) // NOTE(casey): We don't count tests that had no timing blocks - we assume they took some other path
         {
-            if(Tester->OpenBlockCount != Tester->CloseBlockCount)
+            if(tester->open_block_count != tester->close_block_count)
             {
-                Error(Tester, "Unbalanced BeginTime/EndTime");
+                error(tester, "Unbalanced BeginTime/EndTime");
             }
             
-            if(Tester->BytesAccumulatedOnThisTest != Tester->TargetProcessedByteCount)
+            if(tester->bytes_accumulated_on_this_test != tester->target_processed_byte_count)
             {
-                Error(Tester, "Processed byte count mismatch");
+                error(tester, "Processed byte count mismatch");
             }
     
-            if(Tester->Mode == TestMode_Testing)
+            if(tester->mode == TestModeTesting)
             {
-                repetition_test_results *Results = &Tester->Results;
-                u64 ElapsedTime = Tester->TimeAccumulatedOnThisTest;
-                Results->TestCount += 1;
-                Results->TotalTime += ElapsedTime;
-                if(Results->MaxTime < ElapsedTime)
+                RepetitionTestResults *Results = &tester->results;
+                u64 ElapsedTime = tester->time_accumulated_on_this_test;
+                Results->test_count += 1;
+                Results->total_time += ElapsedTime;
+                if(Results->max_time < ElapsedTime)
                 {
-                    Results->MaxTime = ElapsedTime;
+                    Results->max_time = ElapsedTime;
                 }
                 
-                if(Results->MinTime > ElapsedTime)
+                if(Results->min_time > ElapsedTime)
                 {
-                    Results->MinTime = ElapsedTime;
+                    Results->min_time = ElapsedTime;
                     
                     // NOTE(casey): Whenever we get a new minimum time, we reset the clock to the full trial time
-                    Tester->TestsStartedAt = CurrentTime;
+                    tester->tests_started_at = current_time;
                     
-                    if(Tester->PrintNewMinimums)
+                    if(tester->print_new_minimums)
                     {
-                        PrintTime("Min", Results->MinTime, Tester->CPUTimerFreq, Tester->BytesAccumulatedOnThisTest);
+                        print_time("Min", Results->min_time, tester->cpu_timer_freq, tester->bytes_accumulated_on_this_test);
                         printf("               \r");
                     }
                 }
                 
-                Tester->OpenBlockCount = 0;
-                Tester->CloseBlockCount = 0;
-                Tester->TimeAccumulatedOnThisTest = 0;
-                Tester->BytesAccumulatedOnThisTest = 0;
+                tester->open_block_count = 0;
+                tester->close_block_count = 0;
+                tester->time_accumulated_on_this_test = 0;
+                tester->bytes_accumulated_on_this_test = 0;
             }
         }
         
-        if((CurrentTime - Tester->TestsStartedAt) > Tester->TryForTime)
+        if((current_time - tester->tests_started_at) > tester->try_for_time)
         {
-            Tester->Mode = TestMode_Completed;
+            tester->mode = TestModeCompleted;
             
             printf("                                                          \n");
-            PrintResults(Tester->Results, Tester->CPUTimerFreq, Tester->TargetProcessedByteCount);
+            print_results(tester->results, tester->cpu_timer_freq, tester->target_processed_byte_count);
         }
     }
     
-    bool Result = (Tester->Mode == TestMode_Testing);
-    return Result;
+    bool result = (tester->mode == TestModeTesting);
+    return result;
 }

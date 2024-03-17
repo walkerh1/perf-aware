@@ -5,61 +5,47 @@
 
 #include <sys/stat.h>
 
-#define ArrayCount(Array) (sizeof(Array)/sizeof((Array)[0]))
+typedef struct {
+    char const *name;
+    ReadOverheadTestFunction *func;
+} TestFunction;
 
-
-typedef struct 
-{
-    char const *Name;
-    read_overhead_test_func *Func;
-} test_function;
-
-test_function TestFunctions[] =
-{
-    {"fread", ReadViaFRead},
-    {"_read", ReadViaRead},
-    {"ReadFile", ReadViaReadFile},
+TestFunction test_functions[] = {
+    {"fread", read_via_fread},
+    {"read", read_via_read},
 };
 
-int main(int ArgCount, char **Args)
+int main(int argc, char **argv)
 {
-    // NOTE(casey): Since we do not use these functions in this particular build, we reference their pointers
-    // here to prevent the compiler from complaining about "unused functions".
-    (void)&IsInBounds;
-    (void)&AreEqual;
     
-    u64 CPUTimerFreq = estimate_cpu_timer_freq();
+    u64 cpu_timer_freq = estimate_cpu_timer_freq();
     
-    if(ArgCount == 2)
+    if(argc == 2)
     {
-        char *FileName = Args[1];
-        struct stat Stat;
-        stat(FileName, &Stat);
+        char *file_name = argv[1];
+        struct stat status;
+        stat(file_name, &status);
         
-        read_parameters Params = {};
-        Params.Dest = AllocateBuffer(Stat.st_size);
-        Params.FileName = FileName;
+        ReadParameters params = {};
+        params.dest = allocate_buffer(status.st_size);
+        params.file_name = file_name;
     
-        if(Params.Dest.Count > 0)
+        if(params.dest.count > 0)
         {
-            repetition_tester Testers[ArrayCount(TestFunctions)] = {};
+            RepetitionTester testers[len(test_functions)] = {};
             
             for(;;)
             {
-                for(u32 FuncIndex = 0; FuncIndex < ArrayCount(TestFunctions); ++FuncIndex)
+                for(u32 func_idx = 0; func_idx < len(test_functions); ++func_idx)
                 {
-                    repetition_tester *Tester = Testers + FuncIndex;
-                    test_function TestFunc = TestFunctions[FuncIndex];
+                    RepetitionTester *tester = testers + func_idx;
+                    TestFunction test_func = test_functions[func_idx];
                     
-                    printf("\n--- %s ---\n", TestFunc.Name);
-                    NewTestWave(Tester, Params.Dest.Count, CPUTimerFreq);
-                    TestFunc.Func(Tester, &Params);
+                    printf("\n--- %s ---\n", test_func.name);
+                    new_test_wave(tester, params.dest.count, cpu_timer_freq);
+                    test_func.func(tester, &params);
                 }
             }
-            
-            // NOTE(casey): We would normally call this here, but we can't because the compiler will complain about "unreachable code".
-            // So instead we just reference the pointer to prevent the compiler complaining about unused function :(
-            (void)&FreeBuffer;
         }
         else
         {
@@ -68,7 +54,7 @@ int main(int ArgCount, char **Args)
     }
     else
     {
-        fprintf(stderr, "Usage: %s [existing filename]\n", Args[0]);
+        fprintf(stderr, "Usage: %s [existing filename]\n", argv[0]);
     }
 		
     return 0;

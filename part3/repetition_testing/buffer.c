@@ -3,31 +3,25 @@
 
 #include "common.h"
 
-typedef struct
-{
-    size_t Count;
-    u8 *Data;
-} buffer;
+typedef struct {
+    size_t count;
+    u8 *data;
+} Buffer;
 
-#define CONSTANT_STRING(String) {sizeof(String) - 1, (u8 *)(String)}
+#define CONSTANT_STRING(string) {sizeof(string) - 1, (u8 *)(string)}
 
-static bool IsInBounds(buffer Source, u64 At)
-{
-    bool Result = (At < Source.Count);
-    return Result;
+static bool is_in_bounds(Buffer source, u64 at) {
+    bool result = (at < source.count);
+    return result;
 }
 
-static bool AreEqual(buffer A, buffer B)
-{
-    if(A.Count != B.Count)
-    {
+static bool are_equal(Buffer a, Buffer b) {
+    if(a.count != b.count) {
         return false;
     }
     
-    for(u64 Index = 0; Index < A.Count; ++Index)
-    {
-        if(A.Data[Index] != B.Data[Index])
-        {
+    for(u64 idx = 0; idx < a.count; ++idx) {
+        if(a.data[idx] != b.data[idx]) {
             return false;
         }
     }
@@ -35,29 +29,23 @@ static bool AreEqual(buffer A, buffer B)
     return true;
 }
 
-static buffer AllocateBuffer(size_t Count)
-{
-    buffer Result = {};
-    Result.Data = (u8 *)malloc(Count);
-    if(Result.Data)
-    {
-        Result.Count = Count;
-    }
-    else
-    {
-        fprintf(stderr, "ERROR: Unable to allocate %lu bytes.\n", Count);
+static Buffer allocate_buffer(size_t count) {
+    Buffer result = {};
+    result.data = (u8 *)malloc(count);
+
+    if(result.data) {
+        result.count = count;
+    } else {
+        fprintf(stderr, "ERROR: Unable to allocate %lu bytes.\n", count);
     }
     
-    return Result;
+    return result;
 }
 
-static void FreeBuffer(buffer *Buffer)
-{
-    if(Buffer->Data)
-    {
-        free(Buffer->Data);
+static void free_buffer(Buffer *buffer) {
+    if(buffer->data) {
+        free(buffer->data);
     }
-    *Buffer = {};
 }
 
 #endif

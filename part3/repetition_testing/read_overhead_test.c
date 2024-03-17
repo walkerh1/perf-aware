@@ -1,125 +1,83 @@
 #include "repetition_tester.c"
 #include "buffer.c"
+#include "common.h"
+
+#include <fcntl.h>
+#include <unistd.h>
 
 typedef struct {
-    buffer Dest;
-    char const *FileName;
-} read_parameters;
+    Buffer dest;
+    char const *file_name;
+} ReadParameters;
 
-typedef void read_overhead_test_func(repetition_tester *Tester, read_parameters *Params);
+typedef void ReadOverheadTestFunction(RepetitionTester *tester, ReadParameters *params);
 
-static void ReadViaFRead(repetition_tester *Tester, read_parameters *Params) {
-    while(IsTesting(Tester)) {
-        FILE *File = fopen(Params->FileName, "rb");
-        if(File) {
-            buffer DestBuffer = Params->Dest;
+static void read_via_fread(RepetitionTester *tester, ReadParameters *params) {
+    while(is_testing(tester)) {
+        FILE *file = fopen(params->file_name, "rb");
+        if(file) {
+            Buffer dest_buffer = params->dest;
             
-            BeginTime(Tester);
-            size_t Result = fread(DestBuffer.Data, DestBuffer.Count, 1, File);
-            EndTime(Tester);
+            begin_time(tester);
+            size_t result = fread(dest_buffer.data, dest_buffer.count, 1, file);
+            end_time(tester);
             
-            if(Result == 1) {
-                CountBytes(Tester, DestBuffer.Count);
+            if(result == 1) {
+                count_bytes(tester, dest_buffer.count);
             } else {
-                Error(Tester, "fread failed");
+                error(tester, "fread failed");
             }
             
-            fclose(File);
+            fclose(file);
         } else {
-            Error(Tester, "fopen failed");
+            error(tester, "fopen failed");
         }
     }
 }
 
-static void ReadViaRead(repetition_tester *Tester, read_parameters *Params)
+static void read_via_read(RepetitionTester *tester, ReadParameters *params)
 {
-    while(IsTesting(Tester))
+    while(is_testing(tester))
     {
-        int File = _open(Params->FileName, _O_BINARY|_O_RDONLY);
-        if(File != -1)
+        int file = open(params->file_name, O_RDONLY);
+        if(file != -1)
         {
-            buffer DestBuffer = Params->Dest;
+            Buffer dest_buffer = params->dest;
         
-            u8 *Dest = DestBuffer.Data;
-            u64 SizeRemaining = DestBuffer.Count;
-            while(SizeRemaining)
+            u8 *dest = dest_buffer.data;
+            u64 size_remaining = dest_buffer.count;
+            while(size_remaining)
             {
-                u32 ReadSize = INT_MAX;
-                if((u64)ReadSize > SizeRemaining)
+                u32 read_size = INT_MAX;
+                if((u64)read_size > size_remaining)
                 {
-                    ReadSize = (u32)SizeRemaining;
+                    read_size = (u32)size_remaining;
                 }
 
-                BeginTime(Tester);
-                int Result = _read(File, Dest, ReadSize);
-                EndTime(Tester);
+                begin_time(tester);
+                int result = read(file, dest, read_size);
+                end_time(tester);
 
-                if(Result == (int)ReadSize)
+                if(result == (int)read_size)
                 {
-                    CountBytes(Tester, ReadSize);
+                    count_bytes(tester, read_size);
                 }
                 else
                 {
-                    Error(Tester, "_read failed");
+                    error(tester, "read failed");
                     break;
                 }
                 
-                SizeRemaining -= ReadSize;
-                Dest += ReadSize;
+                size_remaining -= read_size;
+                dest += read_size;
             }
             
-            _close(File);
+            close(file);
         }
         else
         {
-            Error(Tester, "_open failed");
+            error(tester, "open failed");
         }
     }
 }
 
-static void ReadViaReadFile(repetition_tester *Tester, read_parameters *Params)
-{
-    while(IsTesting(Tester))
-    {
-        HANDLE File = CreateFileA(Params->FileName, GENERIC_READ, FILE_SHARE_READ|FILE_SHARE_WRITE, 0,
-                                  OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
-        if(File != INVALID_HANDLE_VALUE)
-        {
-            buffer DestBuffer = Params->Dest;
-            
-            u64 SizeRemaining = Params->Dest.Count;
-            u8 *Dest = (u8 *)DestBuffer.Data;
-            while(SizeRemaining)
-            {
-                u32 ReadSize = (u32)-1;
-                if((u64)ReadSize > SizeRemaining)
-                {
-                    ReadSize = (u32)SizeRemaining;
-                }
-                
-                DWORD BytesRead = 0;
-                BeginTime(Tester);
-                bool Result = ReadFile(File, Dest, ReadSize, &BytesRead, 0);
-                EndTime(Tester);
-                
-                if(Result && (BytesRead == ReadSize))
-                {
-                    CountBytes(Tester, ReadSize);
-                }
-                else
-                {
-                    Error(Tester, "ReadFile failed");
-                }
-                
-                SizeRemaining -= ReadSize;
-                Dest += ReadSize;
-            }
-            
-            CloseHandle(File);
-        }
-        else
-        {
-            Error(Tester, "CreateFileA failed");
-        }
-    }
-}
