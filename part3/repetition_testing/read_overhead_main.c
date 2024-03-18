@@ -15,8 +15,7 @@ TestFunction test_functions[] = {
     {"read", read_via_read},
 };
 
-int main(int argc, char **argv) {
-    
+int main(int argc, char **argv) { 
     u64 cpu_timer_freq = estimate_cpu_timer_freq();
     
     if(argc == 2) {
