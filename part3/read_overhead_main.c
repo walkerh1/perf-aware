@@ -27,30 +27,30 @@ int main(int argc, char **argv) {
         params.dest = allocate_buffer(status.st_size);
         params.file_name = file_name;
     
-        if(params.dest.count > 0)
-        {
-            RepetitionTester testers[len(test_functions)] = {};
+        if(params.dest.count > 0) {
+            RepetitionTester testers[len(test_functions)][AllocTypeCount] = {};
             
-            for(;;)
-            {
-                for(u32 func_idx = 0; func_idx < len(test_functions); ++func_idx)
-                {
-                    RepetitionTester *tester = testers + func_idx;
-                    TestFunction test_func = test_functions[func_idx];
-                    
-                    printf("\n--- %s ---\n", test_func.name);
-                    new_test_wave(tester, params.dest.count, cpu_timer_freq);
-                    test_func.func(tester, &params);
+            for(;;) {
+                for(u32 func_idx = 0; func_idx < len(test_functions); ++func_idx) {
+                    for (u32 alloc_idx = 0; alloc_idx < AllocTypeCount; ++alloc_idx) {
+                        params.alloc_type = (AllocType) alloc_idx;
+                        RepetitionTester *tester = &testers[func_idx][alloc_idx];
+                        TestFunction test_func = test_functions[func_idx];
+                        
+                        printf("\n--- %s%s%s ---\n",
+                               describe_alloc_type(params.alloc_type),
+                               params.alloc_type ? " + " : "",
+                               test_func.name
+                        );
+                        new_test_wave(tester, params.dest.count, cpu_timer_freq);
+                        test_func.func(tester, &params);
+                    }
                 }
             }
-        }
-        else
-        {
+        } else {
             fprintf(stderr, "ERROR: Test data size must be non-zero\n");
         }
-    }
-    else
-    {
+    } else {
         fprintf(stderr, "Usage: %s [existing filename]\n", argv[0]);
     }
 		

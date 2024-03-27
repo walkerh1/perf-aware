@@ -100,7 +100,7 @@ static void new_test_wave(RepetitionTester *tester, u64 target_processed_byte_co
         }
     }
 
-    tester->try_for_time = 10 * cpu_timer_freq;
+    tester->try_for_time = 5 * cpu_timer_freq;
     tester->tests_started_at = read_cpu_timer();
 }
 
@@ -127,39 +127,29 @@ static bool is_testing(RepetitionTester *tester)
     {
         u64 current_time = read_cpu_timer();
         
-        if(tester->open_block_count) // NOTE(casey): We don't count tests that had no timing blocks - we assume they took some other path
-        {
-            if(tester->open_block_count != tester->close_block_count)
-            {
+        if(tester->open_block_count) {
+            if(tester->open_block_count != tester->close_block_count) {
                 error(tester, "Unbalanced BeginTime/EndTime");
             }
-            
-            if(tester->bytes_accumulated_on_this_test != tester->target_processed_byte_count)
-            {
+           
+            if(tester->bytes_accumulated_on_this_test != tester->target_processed_byte_count) {
                 error(tester, "Processed byte count mismatch");
             }
     
-            if(tester->mode == TestModeTesting)
-            {
-                RepetitionTestResults *Results = &tester->results;
-                u64 ElapsedTime = tester->time_accumulated_on_this_test;
-                Results->test_count += 1;
-                Results->total_time += ElapsedTime;
-                if(Results->max_time < ElapsedTime)
-                {
-                    Results->max_time = ElapsedTime;
+            if(tester->mode == TestModeTesting) {
+                RepetitionTestResults *results = &tester->results;
+                u64 elapsed_time = tester->time_accumulated_on_this_test;
+                results->test_count += 1;
+                results->total_time += elapsed_time;
+                if(results->max_time < elapsed_time) {
+                    results->max_time = elapsed_time;
                 }
                 
-                if(Results->min_time > ElapsedTime)
-                {
-                    Results->min_time = ElapsedTime;
-                    
-                    // NOTE(casey): Whenever we get a new minimum time, we reset the clock to the full trial time
+                if(results->min_time > elapsed_time) {
+                    results->min_time = elapsed_time;
                     tester->tests_started_at = current_time;
-                    
-                    if(tester->print_new_minimums)
-                    {
-                        print_time("Min", Results->min_time, tester->cpu_timer_freq, tester->bytes_accumulated_on_this_test);
+                    if(tester->print_new_minimums) {
+                        print_time("Min", results->min_time, tester->cpu_timer_freq, tester->bytes_accumulated_on_this_test);
                         printf("               \r");
                     }
                 }
