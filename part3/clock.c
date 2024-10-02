@@ -5,6 +5,7 @@
 
 #include <x86intrin.h>
 #include <sys/time.h>
+#include <sys/resource.h>
 
 // returns number of microseconds in a second
 u64 get_os_time_freq(void) {
@@ -16,6 +17,14 @@ u64 read_os_timer(void) {
     struct timeval value;
     gettimeofday(&value, 0);
     u64 result = get_os_time_freq()*(u64)value.tv_sec + (u64)value.tv_usec;
+    return result;
+}
+
+// returns the number of page faults of the current process
+u64 read_os_page_fault_count(void) {
+    struct rusage usage = {};
+    getrusage(RUSAGE_SELF, &usage);
+    u64 result = usage.ru_minflt + usage.ru_majflt;
     return result;
 }
 
